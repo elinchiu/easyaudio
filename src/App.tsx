@@ -255,7 +255,13 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Logo & Title */}
           <div className="flex items-center gap-2.5 min-w-0">
-            <img ... />
+            <img
+              src="/icon.jpeg"
+              alt="Easy Audio 標誌"
+              className="w-8 h-8 rounded-lg shrink-0"
+              width={32}
+              height={32}
+            />
             <div className="min-w-0">
               <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight whitespace-nowrap truncate">
                 Easy Audio - 播放音檔不卡卡
