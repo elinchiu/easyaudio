@@ -209,7 +209,8 @@ export default function App() {
     }
   }, []);
 
-  // Keyboard Shortcuts: Spacebar (Play/Pause), Left Arrow (Rewind 3s), Right Arrow (Forward 3s)
+  // Keyboard Shortcuts:
+  // Space (播放/暫停)、←/→ (±3 秒)、Shift+N (下一個音檔)、Shift+P (上一個音檔)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in an input or textarea
@@ -223,7 +224,16 @@ export default function App() {
         return;
       }
 
-      if (e.code === 'Space') {
+      // 有按 Ctrl / Cmd / Alt 就不攔截，避免和瀏覽器快捷鍵衝突
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (e.shiftKey && e.code === 'KeyN') {
+        e.preventDefault();
+        player.nextTrack();
+      } else if (e.shiftKey && e.code === 'KeyP') {
+        e.preventDefault();
+        player.prevTrack();
+      } else if (e.code === 'Space') {
         e.preventDefault();
         player.togglePlay();
       } else if (e.code === 'ArrowLeft') {
@@ -240,7 +250,7 @@ export default function App() {
   }, [player]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen bg-[#E0F8C7] text-[#36415A] font-light flex flex-col selection:bg-[#36415A] selection:text-[#E0F8C7]">
       {/* Main Navigation Header (Light Theme) */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -254,7 +264,7 @@ export default function App() {
                 <span>Easy Audio</span>
               </h1>
               <p className="text-[11px] text-slate-500 hidden sm:block">
-                直接讀取整份 Google Drive 資料夾音檔 · 空白鍵暫停/播放 · 左右鍵 ±3秒
+                直接讀取整份 Google Drive 資料夾音檔 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首
               </p>
             </div>
           </div>
