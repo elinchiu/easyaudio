@@ -157,10 +157,10 @@ export const AudioPlayerBar: React.FC<Props> = ({
           />
         </div>
 
-        {/* Player Bar Content */}
-        <div className="max-w-7xl mx-auto px-4 py-2.5 sm:py-3 flex items-center justify-between gap-3 safe-bottom text-slate-800">
+        {/* Player Bar Content：三欄 grid，中間的播放控制固定在正中央 */}
+        <div className="max-w-7xl mx-auto px-4 py-2.5 sm:py-3 grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 safe-bottom text-slate-800">
           {/* Left: Track Info */}
-          <div className="flex items-center gap-3 min-w-0 flex-1 sm:max-w-md">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setIsExpanded(!isExpanded)}
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 text-indigo-600 group relative overflow-hidden shadow-sm"
@@ -188,7 +188,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
           </div>
 
           {/* Center: Main Playback Controls */}
-          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
+          <div className="flex items-center justify-center gap-1 sm:gap-2.5">
             {/* Rewind 3s */}
             <button
               onClick={() => onSkip(-3)}
@@ -203,7 +203,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
             <button
               onClick={onPrev}
               className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition"
-              title="上一首"
+              title="上一首 (快捷鍵: Shift+P)"
             >
               <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
@@ -228,7 +228,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
             <button
               onClick={onNext}
               className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition"
-              title="下一首"
+              title="下一首 (快捷鍵: Shift+N)"
             >
               <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
@@ -245,7 +245,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
           </div>
 
           {/* Right: Study Helper Controls (Speed, A-B Loop, Sleep, Volume) */}
-          <div className="hidden md:flex items-center gap-2 shrink-0">
+          <div className="hidden md:flex items-center justify-end gap-2">
             {/* Speed Selector */}
             <div className="relative">
               <button
