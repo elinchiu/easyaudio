@@ -1,12 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AudioTrack, RepeatMode, ABRepeat } from '../types/track';
-import { getDirectAudioUrl } from '../lib/driveParser';
+import { getTrackPlayableUrl } from '../lib/driveApi';
 
 // In-memory cache for audio object URLs so files don't re-download
 const audioBlobCache = new Map<string, string>();
 
-export function useAudioPlayer(accessToken?: string | null, onRequestAuth?: () => void) {
+// onRequestAuth 保留參數以維持相容；公開資料夾不再需要它
+export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () => void) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 讓 audio 的 ended 事件永遠呼叫最新版本的 handleTrackEnd（避免拿到舊的空 playlist）
+  const handleTrackEndRef = useRef<() => void>(() => {});
 
   const [playlist, setPlaylist] = useState<AudioTrack[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(-1);
@@ -61,14 +65,15 @@ export function useAudioPlayer(accessToken?: string | null, onRequestAuth?: () =
     };
 
     const onEnded = () => {
-      handleTrackEnd();
+      handleTrackEndRef.current();
     };
 
     const onError = () => {
       setIsLoadingAudio(false);
       setIsPlaying(false);
-      // Give clear guidance why playback failed
-      setAudioError('音檔載入失敗。Google 雲端硬碟禁止第三方網站匿名串流，請點擊上方授權 Google 讀取。');
+      setAudioError(
+        '音檔載入失敗。請確認檔案已設為「知道連結的任何人」可檢視，且網站的 API Key 設定正確。若是私人檔案，請登入 Google 後再播放。'
+      );
     };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
@@ -133,35 +138,16 @@ export function useAudioPlayer(accessToken?: string | null, onRequestAuth?: () =
       try {
         let streamUrl: string | null = null;
 
-        // 1. Check if already in memory blob cache
+        // 1. Already in memory blob cache
         if (audioBlobCache.has(track.id)) {
           streamUrl = audioBlobCache.get(track.id)!;
-        } 
-        // 2. Direct web URL (e.g. sample sounds, local blob object URL)
-        else if (track.audioUrl && !track.audioUrl.includes('drive.google.com')) {
-          streamUrl = track.audioUrl;
-        } 
-        // 3. Google Drive Audio File
-        else {
-          // If we have an OAuth token, fetch media binary directly
-          if (accessToken) {
-            const res = await fetch(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`, {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            });
-
-            if (!res.ok) {
-              throw new Error(`Google Drive API 錯誤 (${res.status})，請重新連線 Google 帳號。`);
-            }
-
-            const blob = await res.blob();
-            streamUrl = URL.createObjectURL(blob);
+        } else {
+          // 2. 由 driveApi 決定：
+          //    - 已登入 → 用 Bearer token 下載（可播私人檔案）
+          //    - 未登入 → 直接用 Drive API + API Key 的公開串流網址
+          streamUrl = await getTrackPlayableUrl(track, accessToken);
+          if (streamUrl && streamUrl.startsWith('blob:')) {
             audioBlobCache.set(track.id, streamUrl);
-          } else {
-            // No access token: Google Drive blocks anonymous audio stream requests
-            setAudioError('此音檔來自 Google Drive，因為 Google 安全防護機制，請先點擊上方「授權 Google 讀取」以串流播放！');
-            setIsLoadingAudio(false);
-            if (onRequestAuth) onRequestAuth();
-            return;
           }
         }
 
@@ -191,11 +177,11 @@ export function useAudioPlayer(accessToken?: string | null, onRequestAuth?: () =
         }
       } catch (err: any) {
         console.error('Play track failed:', err);
-        setAudioError(err.message || '音檔播放失敗，請檢查網址連結或點擊授權讀取。');
+        setAudioError(err.message || '音檔播放失敗，請確認檔案已公開分享。');
         setIsLoadingAudio(false);
       }
     },
-    [playlist, playbackRate, volume, isMuted, accessToken, onRequestAuth]
+    [playlist, playbackRate, volume, isMuted, accessToken]
   );
 
   // Play / Pause toggle
@@ -256,6 +242,8 @@ export function useAudioPlayer(accessToken?: string | null, onRequestAuth?: () =
       }
     }
   };
+  // 每次 render 都更新，確保 ended 事件用到最新的 playlist / repeatMode
+  handleTrackEndRef.current = handleTrackEnd;
 
   // Seek
   const seek = (time: number) => {
