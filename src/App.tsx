@@ -254,15 +254,11 @@ export default function App() {
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Logo & Title */}
-          <div className="flex items-center gap-2.5">
-            <img
-              src={`${import.meta.env.BASE_URL}icon.jpeg`}
-              alt="Easy Audio"
-              className="w-9 h-9 rounded-xl object-cover shadow-sm shrink-0"
-            />
-            <div>
-              <h1 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                <span>Easy Audio - 播放音檔不卡卡</span>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img ... />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight whitespace-nowrap truncate">
+                Easy Audio - 播放音檔不卡卡
               </h1>
               <p className="text-[11px] text-slate-500 hidden sm:block">
                 讀取 Google Drive 資料夾 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首
@@ -271,7 +267,7 @@ export default function App() {
           </div>
 
           {/* Right Header Actions */}
-          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
             {/* Google 登入：僅私人資料夾需要，公開資料夾可不登入 */}
             {accessToken ? (
               <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -282,7 +278,7 @@ export default function App() {
               <button
                 onClick={() => handleAuthorize()}
                 disabled={isAuthorizing}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition active:scale-95 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
                 title="只有私人資料夾才需要登入 Google；公開資料夾不用登入"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
