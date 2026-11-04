@@ -166,8 +166,8 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
         if ('mediaSession' in navigator) {
           navigator.mediaSession.metadata = new MediaMetadata({
             title: track.name,
-            artist: '課本音檔學習播放器',
-            album: '課本隨身音檔',
+            artist: 'Easy Audio',
+            album: 'Easy Audio',
             artwork: [
               { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
               { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
