@@ -92,24 +92,24 @@ export const TrackListView: React.FC<Props> = ({
           </div>
           <div>
             <h4 className="text-base font-bold text-slate-800">
-              {tracks.length === 0 ? '尚未載入 Google 雲端音檔' : '找不到符合條件的音檔'}
+              {tracks.length === 0 ? '尚未載入音檔' : '找不到符合條件的音檔'}
             </h4>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
               {tracks.length === 0
-                ? '因為 Google 雲端硬碟的存取安全保護，請點擊下方按鈕進行一次性授權，系統將立即自動讀取整份資料夾內的所有課本音檔！'
+                ? '請確認資料夾已設為「知道連結的任何人」可檢視，然後按上方的「重新整理」或「更換資料夾」。若是私人資料夾，可以登入 Google 後讀取。'
                 : searchQuery
                 ? `沒有包含「${searchQuery}」的檔案`
                 : '目前資料夾中沒有音檔'}
             </p>
           </div>
 
-          {tracks.length === 0 && onAuthorize && (
+          {tracks.length === 0 && onAuthorize && !hasAccessToken && (
             <div className="pt-2">
               <button
                 onClick={onAuthorize}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm active:scale-95 transition"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition"
               >
-                <span>透過 Google 快速授權讀取整份資料夾</span>
+                <span>登入 Google 讀取（私人資料夾）</span>
               </button>
             </div>
           )}
