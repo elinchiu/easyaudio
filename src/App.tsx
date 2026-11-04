@@ -324,8 +324,7 @@ export default function App() {
           onPlayTrack={handleTrackClick}
           onTogglePlay={player.togglePlay}
           onAuthorize={() => handleAuthorize()}
-          // 公開資料夾不需登入，一律視為可播放（若 TrackListView 內有鎖頭/授權提示，靠這個關掉）
-          hasAccessToken={true}
+          hasAccessToken={!!accessToken}
         />
       </main>
 
