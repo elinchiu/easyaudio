@@ -61,7 +61,7 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
 
-  // Authorize Google Drive handler
+  // Authorize Google Drive handler（僅供私人資料夾使用，公開資料夾不需要）
   const handleAuthorize = async (trackToPlay?: AudioTrack | null) => {
     setIsAuthorizing(true);
     try {
@@ -112,7 +112,7 @@ export default function App() {
 
       let token = explicitToken !== undefined ? explicitToken : accessToken;
 
-      // If user forces auth or we don't have token and previous attempt failed
+      // 只有使用者主動按「登入 Google」時才要求授權（私人資料夾）
       if (forceAuth && !token) {
         try {
           const authResult = await googleSignIn();
@@ -123,7 +123,7 @@ export default function App() {
         } catch (e: any) {
           console.warn('Sign-in cancelled or failed:', e);
           setIsLoadingFolder(false);
-          setFolderError('登入授權已取消，無法讀取私有或限制存取的雲端資料夾。');
+          setFolderError('登入授權已取消，無法讀取私人資料夾。');
           return;
         }
       }
@@ -147,14 +147,8 @@ export default function App() {
         }
       } catch (err: any) {
         console.error('Failed to load entire folder:', err);
-        const msg = err.message || '';
-        if (msg.includes('401') || msg.includes('403') || msg.includes('授權') || !token) {
-          setFolderError(
-            '此 Google Drive 資料夾受到權限保護。請點擊下方「透過 Google 快速授權讀取」，系統會立即自動抓取資料夾內的所有音檔！'
-          );
-        } else {
-          setFolderError(`讀取資料夾失敗：${msg}`);
-        }
+        // 直接顯示 driveApi 給的具體原因，不再一律要求授權
+        setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
       } finally {
         setIsLoadingFolder(false);
       }
@@ -162,13 +156,8 @@ export default function App() {
     [accessToken, player]
   );
 
-  // Play track handler with auth guard
+  // Play track handler — 公開資料夾不需要登入，直接播放
   const handleTrackClick = (track: AudioTrack) => {
-    if (!accessToken && !track.id.startsWith('demo-')) {
-      setPendingTrack(track);
-      setIsAuthModalOpen(true);
-      return;
-    }
     player.playTrack(track, tracks);
   };
 
@@ -236,21 +225,21 @@ export default function App() {
 
           {/* Right Header Actions */}
           <div className="flex items-center gap-2">
-            {/* Google Authorization Status / Trigger */}
+            {/* Google 登入：僅私人資料夾需要，公開資料夾可不登入 */}
             {accessToken ? (
               <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>已取得雲端播放授權</span>
+                <span>已登入 Google</span>
               </span>
             ) : (
               <button
                 onClick={() => handleAuthorize()}
                 disabled={isAuthorizing}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition active:scale-95"
-                title="點擊授權 Google 讀取以解鎖音檔播放"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition active:scale-95 disabled:opacity-50"
+                title="只有私人資料夾才需要登入 Google；公開資料夾不用登入"
               >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>{isAuthorizing ? '授權中...' : '授權 Google 讀取'}</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+                <span>{isAuthorizing ? '登入中...' : '登入 Google（私人資料夾）'}</span>
               </button>
             )}
 
@@ -306,21 +295,24 @@ export default function App() {
           </div>
         </div>
 
-        {/* Permission Required Banner if folder requires access */}
+        {/* Error banner：顯示實際原因；私人資料夾可選擇登入 Google */}
         {folderError && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm text-xs text-amber-900 space-y-2">
             <div className="flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div className="flex-1 font-medium leading-relaxed">{folderError}</div>
             </div>
-            <div className="pt-1 flex justify-end">
-              <button
-                onClick={() => loadEntireFolder(folderUrl, true)}
-                className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-2 rounded-xl shadow-sm active:scale-95 transition text-xs"
-              >
-                <span>透過 Google 快速授權讀取整份資料夾</span>
-              </button>
-            </div>
+            {!accessToken && (
+              <div className="pt-1 flex items-center justify-between gap-3">
+                <span className="text-amber-800/80">如果這是私人資料夾，可以登入 Google 後再讀取。</span>
+                <button
+                  onClick={() => loadEntireFolder(folderUrl, true)}
+                  className="shrink-0 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-2 rounded-xl shadow-sm active:scale-95 transition text-xs"
+                >
+                  <span>登入 Google 讀取</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -332,7 +324,8 @@ export default function App() {
           onPlayTrack={handleTrackClick}
           onTogglePlay={player.togglePlay}
           onAuthorize={() => handleAuthorize()}
-          hasAccessToken={!!accessToken}
+          // 公開資料夾不需登入，一律視為可播放（若 TrackListView 內有鎖頭/授權提示，靠這個關掉）
+          hasAccessToken={true}
         />
       </main>
 
@@ -389,7 +382,7 @@ export default function App() {
         onSetTimer={player.setSleepTimer}
       />
 
-      {/* Google Authorization Dialog */}
+      {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}
       <GoogleAuthModal
         isOpen={isAuthModalOpen}
         onClose={() => {
