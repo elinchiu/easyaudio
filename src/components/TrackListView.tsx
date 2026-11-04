@@ -15,7 +15,7 @@ interface Props {
 }
 
 const DURATION_CACHE_KEY = 'tb_track_durations';
-const CONCURRENCY = 3;
+const CONCURRENCY = 0;
 
 const loadDurationCache = (): Record<string, number> => {
   try {
