@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { extractFolderId } from '../lib/driveApi';
 import { Folder, ArrowRight, Sparkles, AlertCircle, X, ExternalLink } from 'lucide-react';
 
@@ -19,9 +19,14 @@ export const DriveFolderInputModal: React.FC<Props> = ({
   isLoading,
   error,
 }) => {
-  if (!isOpen) return null;
-
+  // Hooks 必須在任何 early return 之前呼叫
   const [inputUrl, setInputUrl] = useState(currentFolderUrl);
+
+  useEffect(() => {
+    if (isOpen) setInputUrl(currentFolderUrl);
+  }, [isOpen, currentFolderUrl]);
+
+  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,10 +46,11 @@ export const DriveFolderInputModal: React.FC<Props> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-800">更換 Google Drive 資料夾</h3>
-              <p className="text-xs text-slate-500">輸入公開資料夾網址，自動抓取資料夾內的所有音檔</p>
+              <p className="text-xs text-slate-500">輸入公開資料夾網址，自動抓取資料夾內的所有音檔，不需登入 Google</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
           >
@@ -84,8 +90,11 @@ export const DriveFolderInputModal: React.FC<Props> = ({
             <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-xl flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
               <div className="flex-1">
-                <div className="font-semibold">載入提示</div>
+                <div className="font-semibold">載入失敗</div>
                 <div className="mt-0.5">{error}</div>
+                <div className="mt-1.5 text-rose-600/80">
+                  請確認資料夾（含子資料夾與檔案）的分享設定為「知道連結的任何人 → 檢視者」。
+                </div>
               </div>
             </div>
           )}
@@ -97,6 +106,7 @@ export const DriveFolderInputModal: React.FC<Props> = ({
             </div>
             <div>• 只要貼上一整包 Google Drive 資料夾連結，網站就會自動檢索並整理出裡面所有的音檔檔名。</div>
             <div>• 支援包含子資料夾中的音檔，不需使用者一首一首複製貼上。</div>
+            <div>• 資料夾需設為「知道連結的任何人」可檢視，使用者不必登入 Google 帳號。</div>
           </div>
 
           <div className="mt-6 flex justify-end gap-2.5 pt-3 border-t border-slate-100">
