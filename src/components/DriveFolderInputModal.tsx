@@ -1,463 +1,142 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
+import React, { useEffect, useState } from 'react';
+import { extractFolderId } from '../lib/driveApi';
+import { Folder, ArrowRight, Sparkles, AlertCircle, X, ExternalLink } from 'lucide-react';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AudioTrack } from './types/track';
-import { useAudioPlayer } from './hooks/useAudioPlayer';
-import { 
-  DEFAULT_FOLDER_ID, 
-  fetchFolderAudioTracks, 
-  extractFolderId, 
-  getTrackPlayableUrl 
-} from './lib/driveApi';
-import { googleSignIn, initAuth } from './lib/firebase';
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  currentFolderUrl: string;
+  onLoadFolder: (folderUrl: string) => Promise<void>;
+  isLoading: boolean;
+  error: string | null;
+}
 
-// Components
-import { TrackListView } from './components/TrackListView';
-import { AudioPlayerBar } from './components/AudioPlayerBar';
-import { SleepTimerModal } from './components/SleepTimerModal';
-import { GoogleAuthModal } from './components/GoogleAuthModal';
+export const DriveFolderInputModal: React.FC<Props> = ({
+  isOpen,
+  onClose,
+  currentFolderUrl,
+  onLoadFolder,
+  isLoading,
+  error,
+}) => {
+  // Hooks 必須在任何 early return 之前呼叫
+  const [inputUrl, setInputUrl] = useState(currentFolderUrl);
 
-import { 
-  FolderSync, 
-  Link2,
-  AlertCircle,
-  RefreshCw,
-  ShieldCheck
-} from 'lucide-react';
+  useEffect(() => {
+    if (isOpen) setInputUrl(currentFolderUrl);
+  }, [isOpen, currentFolderUrl]);
 
-const DURATION_CACHE_KEY = 'tb_track_durations';
+  if (!isOpen) return null;
 
-export default function App() {
-  // Folder URL / ID state
-  const [folderUrl, setFolderUrl] = useState<string>(() => {
-    return localStorage.getItem('tb_folder_url') || `https://drive.google.com/drive/folders/${DEFAULT_FOLDER_ID}`;
-  });
-  const [folderName, setFolderName] = useState<string>('音檔資料夾');
-  const [tracks, setTracks] = useState<AudioTrack[]>(() => {
-    try {
-      const stored = localStorage.getItem('tb_folder_tracks');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.warn('Failed to parse cached tracks:', e);
-    }
-    return [];
-  });
-
-  const [isLoadingFolder, setIsLoadingFolder] = useState<boolean>(false);
-  const [folderError, setFolderError] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
-
-  // 貼上資料夾連結的輸入欄
-  const [folderInput, setFolderInput] = useState<string>('');
-
-  // 每首音檔的時長（秒），播放過才會記錄，並存在 localStorage
-  const [durations, setDurations] = useState<Record<string, number>>(() => {
-    try {
-      const raw = localStorage.getItem(DURATION_CACHE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch {
-      // ignore
-    }
-    return {};
-  });
-  const lastSeenIdRef = useRef<string | undefined>(undefined);
-  const lastSeenDurationRef = useRef<number>(0);
-
-  // Modals state
-  const [isSleepModalOpen, setIsSleepModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
-
-  // Authorize Google Drive handler（僅供私人資料夾使用，公開資料夾不需要）
-  const handleAuthorize = async (trackToPlay?: AudioTrack | null) => {
-    setIsAuthorizing(true);
-    try {
-      const res = await googleSignIn();
-      if (res?.accessToken) {
-        setAccessToken(res.accessToken);
-        setIsAuthModalOpen(false);
-        const targetTrack = trackToPlay || pendingTrack;
-        setPendingTrack(null);
-
-        // Load entire folder with the fresh token
-        await loadEntireFolder(folderUrl, false, res.accessToken, targetTrack);
-      }
-    } catch (e) {
-      console.warn('Authorization cancelled or failed:', e);
-    } finally {
-      setIsAuthorizing(false);
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputUrl.trim()) return;
+    await onLoadFolder(inputUrl.trim());
   };
 
-  // Audio player hook with accessToken
-  const player = useAudioPlayer(accessToken, handleAuthorize);
-
-  // 播放時記錄目前這首的時長
-  useEffect(() => {
-    const id = player.currentTrack?.id;
-    const d = player.duration;
-    if (!id) return;
-    if (typeof d !== 'number' || !Number.isFinite(d) || d <= 0) return;
-
-    const trackChanged = lastSeenIdRef.current !== id;
-    lastSeenIdRef.current = id;
-
-    // 剛切歌時，duration 可能還是上一首的值，先略過
-    if (trackChanged && d === lastSeenDurationRef.current) return;
-
-    lastSeenDurationRef.current = d;
-
-    setDurations((prev) => {
-      if (prev[id] !== undefined && Math.abs(prev[id] - d) < 0.5) return prev;
-      const next = { ...prev, [id]: d };
-      try {
-        localStorage.setItem(DURATION_CACHE_KEY, JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, [player.duration, player.currentTrack?.id]);
-
-  // Listen to auth
-  useEffect(() => {
-    const unsub = initAuth((user, token) => {
-      setAccessToken(token);
-    });
-    return () => unsub();
-  }, []);
-
-  // Sync playlist with tracks
-  useEffect(() => {
-    player.setPlaylist(tracks);
-  }, [tracks]);
-
-  // Load a complete Google Drive folder（回傳 true 代表成功）
-  const loadEntireFolder = useCallback(
-    async (
-      targetUrlOrId: string, 
-      forceAuth = false, 
-      explicitToken?: string | null, 
-      trackToPlayAfter?: AudioTrack | null
-    ): Promise<boolean> => {
-      const folderId = extractFolderId(targetUrlOrId);
-      setIsLoadingFolder(true);
-      setFolderError(null);
-
-      let token = explicitToken !== undefined ? explicitToken : accessToken;
-
-      // 只有使用者主動按「登入 Google」時才要求授權（私人資料夾）
-      if (forceAuth && !token) {
-        try {
-          const authResult = await googleSignIn();
-          if (authResult?.accessToken) {
-            token = authResult.accessToken;
-            setAccessToken(token);
-          }
-        } catch (e: any) {
-          console.warn('Sign-in cancelled or failed:', e);
-          setIsLoadingFolder(false);
-          setFolderError('登入授權已取消，無法讀取私人資料夾。');
-          return false;
-        }
-      }
-
-      try {
-        const result = await fetchFolderAudioTracks(folderId, token);
-        setFolderName(result.folderName);
-        setTracks(result.tracks);
-        player.setPlaylist(result.tracks);
-
-        // Persist to localStorage so the app loads instantly without re-fetching
-        localStorage.setItem('tb_folder_url', targetUrlOrId);
-        localStorage.setItem('tb_folder_tracks', JSON.stringify(result.tracks));
-        localStorage.setItem('tb_folder_name', result.folderName);
-
-        if (trackToPlayAfter) {
-          // Play the requested track right away
-          const matched = result.tracks.find(t => t.id === trackToPlayAfter.id) || trackToPlayAfter;
-          player.playTrack(matched, result.tracks);
-        }
-        return true;
-      } catch (err: any) {
-        console.error('Failed to load entire folder:', err);
-        // 直接顯示 driveApi 給的具體原因，不再一律要求授權
-        setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
-        return false;
-      } finally {
-        setIsLoadingFolder(false);
-      }
-    },
-    [accessToken, player]
-  );
-
-  // 按「匯入」：載入貼上的資料夾連結
-  const handleImport = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const url = folderInput.trim();
-    if (!url || isLoadingFolder) return;
-
-    setFolderUrl(url);
-    const ok = await loadEntireFolder(url, false);
-    // 成功才清空輸入欄；失敗時保留，方便使用者修改後重試
-    if (ok) setFolderInput('');
-  };
-
-  // Play track handler — 公開資料夾不需要登入，直接播放
-  const handleTrackClick = (track: AudioTrack) => {
-    player.playTrack(track, tracks);
-  };
-
-  // Initial load if no tracks cached
-  useEffect(() => {
-    if (tracks.length === 0) {
-      loadEntireFolder(folderUrl);
-    }
-  }, []);
-
-  // Keyboard Shortcuts:
-  // Space (播放/暫停)、←/→ (±3 秒)、Shift+N (下一個音檔)、Shift+P (上一個音檔)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input or textarea
-      const target = e.target as HTMLElement;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-         target.tagName === 'TEXTAREA' ||
-         target.isContentEditable)
-      ) {
-        return;
-      }
-
-      // 有按 Ctrl / Cmd / Alt 就不攔截，避免和瀏覽器快捷鍵衝突
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      if (e.shiftKey && e.code === 'KeyN') {
-        e.preventDefault();
-        player.nextTrack();
-      } else if (e.shiftKey && e.code === 'KeyP') {
-        e.preventDefault();
-        player.prevTrack();
-      } else if (e.code === 'Space') {
-        e.preventDefault();
-        player.togglePlay();
-      } else if (e.code === 'ArrowLeft') {
-        e.preventDefault();
-        player.skip(-3);
-      } else if (e.code === 'ArrowRight') {
-        e.preventDefault();
-        player.skip(3);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [player]);
+  const folderId = extractFolderId(inputUrl);
 
   return (
-    <div className="min-h-screen bg-white text-[#36415A] font-light flex flex-col selection:bg-[#36415A] selection:text-[#E0F8C7]">
-      {/* Main Navigation Header (Light Theme) */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          {/* Logo & Title */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <img
-              src={`${import.meta.env.BASE_URL}icon.jpeg`}
-              alt="Easy Audio 標誌"
-              className="w-8 h-8 rounded-lg shrink-0"
-              width={32}
-              height={32}
-            />
-            <div className="min-w-0">
-              <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight whitespace-nowrap truncate">
-                Easy Audio - 播放音檔不卡卡
-              </h1>
-              <p className="text-[11px] text-slate-500 hidden sm:block">
-                讀取 Google Drive 資料夾 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首
-              </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+      <div className="w-full max-w-lg rounded-2xl bg-white border border-slate-200 p-6 shadow-2xl animate-in zoom-in-95 text-slate-800">
+        <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <Folder className="w-4 h-4" />
             </div>
-          </div>
-
-          {/* Right Header Actions */}
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Google 登入：僅私人資料夾需要，公開資料夾可不登入 */}
-            {accessToken ? (
-              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>已登入 Google</span>
-              </span>
-            ) : (
-              <button
-                onClick={() => handleAuthorize()}
-                disabled={isAuthorizing}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
-                title="只有私人資料夾才需要登入 Google；公開資料夾不用登入"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
-                <span>{isAuthorizing ? '登入中...' : '登入 Google（私人資料夾）'}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4 space-y-4 pb-32">
-        {/* 貼上資料夾連結 + 匯入 */}
-        <form
-          onSubmit={handleImport}
-          className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex items-center gap-2.5"
-        >
-          <div className="flex-1 min-w-0 flex items-center gap-2.5 bg-[#E0F8C7] rounded-xl px-3.5 py-2.5">
-            <Link2 className="w-4 h-4 text-slate-500 shrink-0" />
-            <input
-              type="text"
-              inputMode="url"
-              value={folderInput}
-              onChange={(e) => setFolderInput(e.target.value)}
-              placeholder="貼上你的檔案夾"
-              aria-label="Google Drive 資料夾連結"
-              className="w-full min-w-0 bg-transparent outline-none text-sm text-[#36415A] placeholder:text-slate-500"
-            />
+            <div>
+              <h3 className="text-base font-bold text-slate-800">更換 Google Drive 資料夾</h3>
+              <p className="text-xs text-slate-500">輸入公開資料夾網址，自動抓取資料夾內的所有音檔，不需登入 Google</p>
+            </div>
           </div>
           <button
-            type="submit"
-            disabled={isLoadingFolder || !folderInput.trim()}
-            className="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-sm active:scale-95 transition disabled:opacity-50 disabled:active:scale-100"
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
           >
-            {isLoadingFolder && (
-              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            )}
-            <span>{isLoadingFolder ? '匯入中...' : '匯入'}</span>
+            <X className="w-5 h-5" />
           </button>
-        </form>
-
-        {/* Drive Folder Status Banner */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-              <FolderSync className={`w-5 h-5 ${isLoadingFolder ? 'animate-spin' : ''}`} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-slate-800 text-sm truncate">{folderName}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-100">
-                  {tracks.length} 首音檔
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => loadEntireFolder(folderUrl, false)}
-              disabled={isLoadingFolder}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 active:scale-95 transition disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingFolder ? 'animate-spin' : ''}`} />
-              <span>{isLoadingFolder ? '讀取中...' : '重新整理'}</span>
-            </button>
-          </div>
         </div>
 
-        {/* Error banner：顯示實際原因；私人資料夾可選擇登入 Google */}
-        {folderError && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm text-xs text-amber-900 space-y-2">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="flex-1 font-medium leading-relaxed">{folderError}</div>
-            </div>
-            <div className="text-amber-800/80 pl-6">
-              請確認資料夾（含子資料夾與檔案）的分享設定為「知道連結的任何人 → 檢視者」。
-            </div>
-            {!accessToken && (
-              <div className="pt-1 flex items-center justify-between gap-3">
-                <span className="text-amber-800/80">如果這是私人資料夾，可以登入 Google 後再讀取。</span>
-                <button
-                  onClick={() => loadEntireFolder(folderUrl, true)}
-                  className="shrink-0 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-2 rounded-xl shadow-sm active:scale-95 transition text-xs"
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Google Drive 資料夾網址 (Folder URL 或 ID)：
+            </label>
+            <input
+              type="text"
+              placeholder="例如：https://drive.google.com/drive/folders/1J-6Cqy_XamKDEoT2lGp49d-OtP1g9i2m"
+              value={inputUrl}
+              onChange={(e) => setInputUrl(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white font-mono transition-all"
+            />
+            {folderId && (
+              <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+                <span>辨識出的資料夾 ID：<code className="text-indigo-600 font-bold">{folderId}</code></span>
+                <a
+                  href={`https://drive.google.com/drive/folders/${folderId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-700"
                 >
-                  <span>登入 Google 讀取</span>
-                </button>
+                  <span>開啟檢視</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
             )}
           </div>
-        )}
 
-        {/* Track List View with Search only (selected filter row removed, placeholder="搜尋...") */}
-        <TrackListView
-          tracks={tracks}
-          durations={durations}
-          currentTrackId={player.currentTrack?.id}
-          isPlaying={player.isPlaying}
-          onPlayTrack={handleTrackClick}
-          onTogglePlay={player.togglePlay}
-          onAuthorize={() => handleAuthorize()}
-          hasAccessToken={!!accessToken}
-        />
-      </main>
+          {error && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3 rounded-xl flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold">載入失敗</div>
+                <div className="mt-0.5">{error}</div>
+                <div className="mt-1.5 text-rose-600/80">
+                  請確認資料夾（含子資料夾與檔案）的分享設定為「知道連結的任何人 → 檢視者」。
+                </div>
+              </div>
+            </div>
+          )}
 
-      {/* Persistent Bottom Audio Player (Light Mode with 3s skip) */}
-      <AudioPlayerBar
-        currentTrack={player.currentTrack}
-        isPlaying={player.isPlaying}
-        currentTime={player.currentTime}
-        duration={player.duration}
-        playbackRate={player.playbackRate}
-        repeatMode={player.repeatMode}
-        volume={player.volume}
-        isMuted={player.isMuted}
-        isLoading={player.isLoadingAudio}
-        audioError={player.audioError}
-        abRepeat={player.abRepeat}
-        sleepTimerMinutes={player.sleepTimerMinutes}
-        sleepTimerSecondsLeft={player.sleepTimerSecondsLeft}
-        onTogglePlay={player.togglePlay}
-        onNext={player.nextTrack}
-        onPrev={player.prevTrack}
-        onSeek={player.seek}
-        onSkip={player.skip}
-        onChangePlaybackRate={player.changePlaybackRate}
-        onSetRepeatMode={player.setRepeatMode}
-        onChangeVolume={player.changeVolume}
-        onToggleMute={player.toggleMute}
-        onSetPointA={player.setPointA}
-        onSetPointB={player.setPointB}
-        onClearAB={player.clearABRepeat}
-        onOpenSleepTimer={() => setIsSleepModalOpen(true)}
-        onAuthorizeGoogle={() => handleAuthorize()}
-      />
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 text-xs text-slate-600 space-y-1.5">
+            <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              <span>自動載入整個資料夾：</span>
+            </div>
+            <div>• 只要貼上一整包 Google Drive 資料夾連結，網站就會自動檢索並整理出裡面所有的音檔檔名。</div>
+            <div>• 支援包含子資料夾中的音檔，不需使用者一首一首複製貼上。</div>
+            <div>• 資料夾需設為「知道連結的任何人」可檢視，使用者不必登入 Google 帳號。</div>
+          </div>
 
-      {/* Sleep Timer Modal */}
-      <SleepTimerModal
-        isOpen={isSleepModalOpen}
-        onClose={() => setIsSleepModalOpen(false)}
-        currentMinutes={player.sleepTimerMinutes}
-        secondsLeft={player.sleepTimerSecondsLeft}
-        onSetTimer={player.setSleepTimer}
-      />
-
-      {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}
-      <GoogleAuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => {
-          setIsAuthModalOpen(false);
-          setPendingTrack(null);
-        }}
-        onAuthorize={async () => {
-          await handleAuthorize(pendingTrack);
-        }}
-        isLoading={isAuthorizing}
-        pendingTrackName={pendingTrack?.name}
-      />
+          <div className="mt-6 flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || !inputUrl.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white shadow-sm active:scale-95 transition"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>正在讀取資料夾...</span>
+                </>
+              ) : (
+                <>
+                  <span>載入整份資料夾音檔</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
-}
+};
