@@ -37,7 +37,7 @@ export default function App() {
   const [folderUrl, setFolderUrl] = useState<string>(() => {
     return localStorage.getItem('tb_folder_url') || `https://drive.google.com/drive/folders/${DEFAULT_FOLDER_ID}`;
   });
-  const [folderName, setFolderName] = useState<string>('課本音檔資料夾');
+  const [folderName, setFolderName] = useState<string>('音檔資料夾');
   const [tracks, setTracks] = useState<AudioTrack[]>(() => {
     try {
       const stored = localStorage.getItem('tb_folder_tracks');
@@ -264,7 +264,7 @@ export default function App() {
                 <span>Easy Audio - 播放音檔不卡卡</span>
               </h1>
               <p className="text-[11px] text-slate-500 hidden sm:block">
-                直接讀取整份 Google Drive 資料夾音檔 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首
+                讀取 Google Drive 資料夾 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首
               </p>
             </div>
           </div>
