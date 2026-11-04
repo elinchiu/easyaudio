@@ -1,17 +1,17 @@
-@import url("https://fonts.googleapis.com/css2?family=Chiron+GoRound+TC:wght@200&display=swap");
 @import "tailwindcss";
 
 /* 主題色：#E0F8C7（淺綠）、#36415A（深藍灰）
    把 indigo / slate 色階換成主題色，元件不用逐一修改 */
 @theme {
-  --font-sans: "Chiron GoRound TC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
+  /* 英文：Google Sans Flex（ExtraLight 200），中文：Chiron GoRound TC（Light 300） */
+  --font-sans: "Google Sans Flex", "Chiron GoRound TC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
 
-  /* 字重：全部統一為 ExtraLight 200 */
-  --font-weight-light: 200;
-  --font-weight-normal: 200;
-  --font-weight-medium: 200;
-  --font-weight-semibold: 200;
-  --font-weight-bold: 200;
+  /* 字重：全部統一為 300（英文因為只載入 200，會自動使用 200） */
+  --font-weight-light: 300;
+  --font-weight-normal: 300;
+  --font-weight-medium: 300;
+  --font-weight-semibold: 300;
+  --font-weight-bold: 300;
 
   /* indigo：強調色 */
   --color-indigo-50:  #F3FCEA;
@@ -41,8 +41,8 @@
 @layer base {
   html, body {
     @apply bg-slate-50 text-slate-800 antialiased selection:bg-indigo-600 selection:text-indigo-100 min-h-screen;
-    font-family: "Chiron GoRound TC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
-    font-weight: 200;
+    font-family: "Google Sans Flex", "Chiron GoRound TC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
+    font-weight: 300;
     -webkit-tap-highlight-color: transparent;
   }
 }
