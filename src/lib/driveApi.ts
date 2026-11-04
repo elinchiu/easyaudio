@@ -47,10 +47,18 @@ async function buildError(response: Response, hasToken: boolean): Promise<Error>
   let message = '';
   try {
     const body = await response.json();
-    reason = body?.error?.errors?.[0]?.reason || body?.error?.status || '';
+    // details[].reason 比 errors[0].reason 更精確（例如 API_KEY_SERVICE_BLOCKED）
+    const detailReason = (body?.error?.details || []).find((d: any) => d?.reason)?.reason;
+    reason = detailReason || body?.error?.errors?.[0]?.reason || body?.error?.status || '';
     message = body?.error?.message || '';
   } catch {
     // ignore
+  }
+  console.warn('[Drive API error]', response.status, reason, message);
+  const raw = `（Google 回應：${response.status}${reason ? ` / ${reason}` : ''}${message ? ` / ${message}` : ''}）`;
+
+  if (reason === 'API_KEY_SERVICE_BLOCKED' || /are blocked/i.test(message) && /API/i.test(message) && reason !== 'API_KEY_HTTP_REFERRER_BLOCKED') {
+    return new Error(`API Key 的「API 限制」沒有包含 Google Drive API，請到 Cloud Console 勾選。${raw}`);
   }
 
   if (reason === 'API_KEY_HTTP_REFERRER_BLOCKED' || /referer/i.test(message)) {
