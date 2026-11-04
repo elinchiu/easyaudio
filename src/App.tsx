@@ -197,8 +197,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [player]);
 
-  const currentFolderId = extractFolderId(folderUrl);
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col selection:bg-indigo-100 selection:text-indigo-900">
       {/* Main Navigation Header (Light Theme) */}
@@ -269,9 +267,6 @@ export default function App() {
                 <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-100">
                   {tracks.length} 首音檔
                 </span>
-              </div>
-              <div className="text-xs text-slate-500 truncate mt-0.5">
-                雲端資料夾 ID：<span className="font-mono text-indigo-700 font-medium">{currentFolderId}</span>
               </div>
             </div>
           </div>
