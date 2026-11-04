@@ -17,13 +17,12 @@ import { googleSignIn, initAuth } from './lib/firebase';
 // Components
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
-import { DriveFolderInputModal } from './components/DriveFolderInputModal';
 import { SleepTimerModal } from './components/SleepTimerModal';
 import { GoogleAuthModal } from './components/GoogleAuthModal';
 
 import { 
   FolderSync, 
-  FolderOpen, 
+  Link2,
   AlertCircle,
   RefreshCw,
   ShieldCheck
@@ -55,6 +54,9 @@ export default function App() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
 
+  // 貼上資料夾連結的輸入欄
+  const [folderInput, setFolderInput] = useState<string>('');
+
   // 每首音檔的時長（秒），播放過才會記錄，並存在 localStorage
   const [durations, setDurations] = useState<Record<string, number>>(() => {
     try {
@@ -69,7 +71,6 @@ export default function App() {
   const lastSeenDurationRef = useRef<number>(0);
 
   // Modals state
-  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isSleepModalOpen, setIsSleepModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
@@ -138,14 +139,14 @@ export default function App() {
     player.setPlaylist(tracks);
   }, [tracks]);
 
-  // Load a complete Google Drive folder
+  // Load a complete Google Drive folder（回傳 true 代表成功）
   const loadEntireFolder = useCallback(
     async (
       targetUrlOrId: string, 
       forceAuth = false, 
       explicitToken?: string | null, 
       trackToPlayAfter?: AudioTrack | null
-    ) => {
+    ): Promise<boolean> => {
       const folderId = extractFolderId(targetUrlOrId);
       setIsLoadingFolder(true);
       setFolderError(null);
@@ -164,7 +165,7 @@ export default function App() {
           console.warn('Sign-in cancelled or failed:', e);
           setIsLoadingFolder(false);
           setFolderError('登入授權已取消，無法讀取私人資料夾。');
-          return;
+          return false;
         }
       }
 
@@ -178,23 +179,36 @@ export default function App() {
         localStorage.setItem('tb_folder_url', targetUrlOrId);
         localStorage.setItem('tb_folder_tracks', JSON.stringify(result.tracks));
         localStorage.setItem('tb_folder_name', result.folderName);
-        setIsFolderModalOpen(false);
 
         if (trackToPlayAfter) {
           // Play the requested track right away
           const matched = result.tracks.find(t => t.id === trackToPlayAfter.id) || trackToPlayAfter;
           player.playTrack(matched, result.tracks);
         }
+        return true;
       } catch (err: any) {
         console.error('Failed to load entire folder:', err);
         // 直接顯示 driveApi 給的具體原因，不再一律要求授權
         setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
+        return false;
       } finally {
         setIsLoadingFolder(false);
       }
     },
     [accessToken, player]
   );
+
+  // 按「匯入」：載入貼上的資料夾連結
+  const handleImport = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const url = folderInput.trim();
+    if (!url || isLoadingFolder) return;
+
+    setFolderUrl(url);
+    const ok = await loadEntireFolder(url, false);
+    // 成功才清空輸入欄；失敗時保留，方便使用者修改後重試
+    if (ok) setFolderInput('');
+  };
 
   // Play track handler — 公開資料夾不需要登入，直接播放
   const handleTrackClick = (track: AudioTrack) => {
@@ -273,7 +287,7 @@ export default function App() {
           </div>
 
           {/* Right Header Actions */}
-            <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             {/* Google 登入：僅私人資料夾需要，公開資料夾可不登入 */}
             {accessToken ? (
               <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -291,25 +305,41 @@ export default function App() {
                 <span>{isAuthorizing ? '登入中...' : '登入 Google（私人資料夾）'}</span>
               </button>
             )}
-
-            {/* Change Entire Drive Folder Button */}
-            <button
-              onClick={() => {
-                setFolderError(null);
-                setIsFolderModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
-              title="更換整份 Google Drive 資料夾"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
-              <span>更換資料夾</span>
-            </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4 space-y-4 pb-32">
+        {/* 貼上資料夾連結 + 匯入 */}
+        <form
+          onSubmit={handleImport}
+          className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex items-center gap-2.5"
+        >
+          <div className="flex-1 min-w-0 flex items-center gap-2.5 bg-[#E0F8C7] rounded-xl px-3.5 py-2.5">
+            <Link2 className="w-4 h-4 text-slate-500 shrink-0" />
+            <input
+              type="text"
+              inputMode="url"
+              value={folderInput}
+              onChange={(e) => setFolderInput(e.target.value)}
+              placeholder="貼上你的檔案夾"
+              aria-label="Google Drive 資料夾連結"
+              className="w-full min-w-0 bg-transparent outline-none text-sm text-[#36415A] placeholder:text-slate-500"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isLoadingFolder || !folderInput.trim()}
+            className="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-sm active:scale-95 transition disabled:opacity-50 disabled:active:scale-100"
+          >
+            {isLoadingFolder && (
+              <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            )}
+            <span>{isLoadingFolder ? '匯入中...' : '匯入'}</span>
+          </button>
+        </form>
+
         {/* Drive Folder Status Banner */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -344,6 +374,9 @@ export default function App() {
             <div className="flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div className="flex-1 font-medium leading-relaxed">{folderError}</div>
+            </div>
+            <div className="text-amber-800/80 pl-6">
+              請確認資料夾（含子資料夾與檔案）的分享設定為「知道連結的任何人 → 檢視者」。
             </div>
             {!accessToken && (
               <div className="pt-1 flex items-center justify-between gap-3">
@@ -401,19 +434,6 @@ export default function App() {
         onClearAB={player.clearABRepeat}
         onOpenSleepTimer={() => setIsSleepModalOpen(true)}
         onAuthorizeGoogle={() => handleAuthorize()}
-      />
-
-      {/* Google Drive Entire Folder Input Modal */}
-      <DriveFolderInputModal
-        isOpen={isFolderModalOpen}
-        onClose={() => setIsFolderModalOpen(false)}
-        currentFolderUrl={folderUrl}
-        onLoadFolder={async (newUrl) => {
-          setFolderUrl(newUrl);
-          await loadEntireFolder(newUrl, false);
-        }}
-        isLoading={isLoadingFolder}
-        error={folderError}
       />
 
       {/* Sleep Timer Modal */}
