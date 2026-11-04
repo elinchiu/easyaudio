@@ -22,7 +22,6 @@ import { SleepTimerModal } from './components/SleepTimerModal';
 import { GoogleAuthModal } from './components/GoogleAuthModal';
 
 import { 
-  Headphones, 
   FolderSync, 
   FolderOpen, 
   AlertCircle,
@@ -256,9 +255,11 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Logo & Title */}
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-sm text-white shrink-0">
-              <Headphones className="w-5 h-5" />
-            </div>
+            <img
+              src={`${import.meta.env.BASE_URL}icon.jpeg`}
+              alt="Easy Audio"
+              className="w-9 h-9 rounded-xl object-cover shadow-sm shrink-0"
+            />
             <div>
               <h1 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
                 <span>Easy Audio - 播放音檔不卡卡</span>
