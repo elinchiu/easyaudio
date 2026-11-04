@@ -15,7 +15,6 @@ import {
 import { googleSignIn, initAuth } from './lib/firebase';
 
 // Components
-import { PWAInstallButton } from './components/PWAInstallButton';
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { DriveFolderInputModal } from './components/DriveFolderInputModal';
@@ -212,7 +211,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                <span>課本音檔學習播放器</span>
+                <span>Easy Audio</span>
               </h1>
               <p className="text-[11px] text-slate-500 hidden sm:block">
                 直接讀取整份 Google Drive 資料夾音檔 · 空白鍵暫停/播放 · 左右鍵 ±3秒
@@ -252,9 +251,6 @@ export default function App() {
               <FolderOpen className="w-3.5 h-3.5 text-indigo-600" />
               <span>更換資料夾</span>
             </button>
-
-            {/* PWA Install Button */}
-            <PWAInstallButton variant="button" />
           </div>
         </div>
       </header>
