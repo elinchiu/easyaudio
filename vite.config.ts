@@ -17,7 +17,7 @@ export default defineConfig(() => {
           id: '/',
           name: 'Easy Audio - 播放音檔不卡卡',
           short_name: 'Easy Audio',
-          description: '專為課本對照設計的音檔播放器與學習小幫手，支援離線播放與單元快速搜尋。',
+          description: '取代 Google Drive 音檔播放器的好工具',
           theme_color: '#ffffff',
           background_color: '#ffffff',
           display: 'standalone',
