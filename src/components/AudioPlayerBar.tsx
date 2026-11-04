@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AudioTrack, RepeatMode, ABRepeat } from '../types/track';
 import { 
   Play, 
@@ -7,9 +7,6 @@ import {
   SkipForward, 
   RotateCcw, 
   RotateCw, 
-  Repeat, 
-  Repeat1, 
-  Shuffle, 
   Volume2, 
   VolumeX, 
   Gauge, 
@@ -81,6 +78,13 @@ export const AudioPlayerBar: React.FC<Props> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
+  // 已移除循環按鈕：固定為「播完最後一首就停止」（normal）
+  useEffect(() => {
+    if (repeatMode !== 'normal') {
+      onSetRepeatMode('normal');
+    }
+  }, [repeatMode, onSetRepeatMode]);
+
   if (!currentTrack) {
     return null;
   }
@@ -96,14 +100,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
   const aPercent = abRepeat.pointA !== null && duration > 0 ? (abRepeat.pointA / duration) * 100 : null;
   const bPercent = abRepeat.pointB !== null && duration > 0 ? (abRepeat.pointB / duration) * 100 : null;
 
-  const cycleRepeatMode = () => {
-    if (repeatMode === 'repeat-all') onSetRepeatMode('repeat-one');
-    else if (repeatMode === 'repeat-one') onSetRepeatMode('shuffle');
-    else if (repeatMode === 'shuffle') onSetRepeatMode('normal');
-    else onSetRepeatMode('repeat-all');
-  };
-
-  const speedOptions = [0.5, 0.75, 0.85, 1.0, 1.25, 1.5, 1.75, 2.0];
+  const speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5];
 
   return (
     <>
@@ -251,7 +248,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
               <button
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
-                title="語速調整"
+                title="速度調整"
               >
                 <Gauge className="w-3.5 h-3.5 text-indigo-600" />
                 <span>{playbackRate}x</span>
@@ -313,23 +310,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
                 </button>
               )}
             </div>
-
-            {/* Repeat Mode */}
-            <button
-              onClick={cycleRepeatMode}
-              className="p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition"
-              title={`循環模式: ${repeatMode}`}
-            >
-              {repeatMode === 'repeat-one' ? (
-                <Repeat1 className="w-4 h-4 text-indigo-600" />
-              ) : repeatMode === 'shuffle' ? (
-                <Shuffle className="w-4 h-4 text-indigo-600" />
-              ) : repeatMode === 'repeat-all' ? (
-                <Repeat className="w-4 h-4 text-indigo-600" />
-              ) : (
-                <Repeat className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
 
             {/* Sleep Timer */}
             <button
@@ -398,10 +378,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
             >
               <ChevronDown className="w-5 h-5" />
             </button>
-            <div className="text-center font-bold text-slate-700 text-sm">
-              聽力播放專注模式
-            </div>
-            <div className="w-9" />
           </div>
 
           {/* Central Track info */}
@@ -469,15 +445,15 @@ export const AudioPlayerBar: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Speed & Repeat row */}
-            <div className="flex items-center justify-between text-xs text-slate-600 px-1">
+            {/* Speed row */}
+            <div className="flex items-center justify-center text-xs text-slate-600 px-1">
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">語速:</span>
-                {[0.75, 1.0, 1.25, 1.5].map((rate) => (
+                <span className="text-slate-500">速度:</span>
+                {speedOptions.map((rate) => (
                   <button
                     key={rate}
                     onClick={() => onChangePlaybackRate(rate)}
-                    className={`px-2 py-1 rounded-lg text-xs font-semibold ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
                       playbackRate === rate ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
                     }`}
                   >
@@ -485,14 +461,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
                   </button>
                 ))}
               </div>
-
-              <button
-                onClick={cycleRepeatMode}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 text-xs font-medium text-slate-700"
-              >
-                <Repeat className="w-3.5 h-3.5 text-indigo-600" />
-                <span className="capitalize">{repeatMode}</span>
-              </button>
             </div>
 
             {/* Playback Controls Row */}
