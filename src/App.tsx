@@ -301,7 +301,7 @@ export default function App() {
                 title="只有私人資料夾才需要登入 Google；公開資料夾不用登入"
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
-                <span>{isAuthorizing ? '登入中...' : '登入 Google（私人資料夾）'}</span>
+                <span>{isAuthorizing ? '登入中...' : '登入 Google'}</span>
               </button>
             )}
           </div>

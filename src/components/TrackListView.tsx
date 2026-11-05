@@ -97,7 +97,7 @@ export const TrackListView: React.FC<Props> = ({
               onClick={onAuthorize}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition"
             >
-              登入 Google 讀取（私人資料夾）
+              登入 Google
             </button>
           )}
 
