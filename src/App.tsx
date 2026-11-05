@@ -331,7 +331,7 @@ export default function App() {
           <button
             type="submit"
             disabled={isLoadingFolder || !folderInput.trim()}
-            className="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-sm active:scale-95 transition disabled:opacity-50 disabled:active:scale-100"
+            className="shrink-0 flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold bg-[#495779] hover:bg-[#3d4a68] text-white shadow-sm active:scale-95 transition disabled:opacity-50 disabled:active:scale-100"
           >
             {isLoadingFolder && (
               <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
