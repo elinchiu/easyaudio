@@ -1,6 +1,6 @@
 {
-  "name": "課本音檔學習播放器 (Textbook Audio Companion)",
-  "description": "專為課本對照設計的音檔播放器與學習小幫手，支援手機 PWA 安裝、依課次單元快速搜尋、音訊播放控制與離線瀏覽。",
+  "name": "Easy Audio, make it easy to listen to audios",
+  "description": "Easy way to listen to a bunch of audio from public google drive file",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
