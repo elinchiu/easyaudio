@@ -160,7 +160,7 @@ export async function fetchFolderAudioTracks(
   accessToken?: string | null
 ): Promise<FolderFetchResult> {
   const rootId = extractFolderId(folderId);
-  let folderName = 'Google Drive 音檔資料夾';
+  let folderName = 'File Name';
 
   if (!accessToken && !API_KEY) {
     throw new Error('尚未設定 API Key（VITE_GOOGLE_API_KEY），無法讀取公開資料夾。');

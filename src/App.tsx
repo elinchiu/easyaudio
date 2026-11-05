@@ -35,7 +35,7 @@ export default function App() {
   const [folderUrl, setFolderUrl] = useState<string>(() => {
     return localStorage.getItem('tb_folder_url') || `https://drive.google.com/drive/folders/${DEFAULT_FOLDER_ID}`;
   });
-  const [folderName, setFolderName] = useState<string>('音檔資料夾');
+  const [folderName, setFolderName] = useState<string>('File Name');
   const [tracks, setTracks] = useState<AudioTrack[]>(() => {
     try {
       const stored = localStorage.getItem('tb_folder_tracks');
