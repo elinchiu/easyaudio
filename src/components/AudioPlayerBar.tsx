@@ -9,7 +9,6 @@ import {
   RotateCw,
   Volume2,
   VolumeX,
-  Gauge,
   ChevronUp,
   ChevronDown,
   Disc,
@@ -109,7 +108,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
   onAuthorizeGoogle,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
 
   // 已移除循環按鈕：固定為「播完最後一首就停止」（normal）
   useEffect(() => {
@@ -248,8 +246,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* 右：學習輔助（速度、A-B 循環、睡眠計時、音量），僅桌面顯示 */}
-          <div className="hidden md:flex items-center justify-end gap-2">
+          {/* 右：學習輔助（速度、A-B 循環、音量），僅桌面顯示 */}
+          <div className="hidden md:flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
             {/* 速度 */}
             <div className="relative">
               <button
@@ -418,14 +416,16 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </div>
 
             {/* 速度 */}
-            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-600 px-1">
-              <span className="text-slate-500">速度:</span>
+            <div className="flex items-center gap-1" role="group" aria-label="播放速度">
+              <span className="text-[11px] text-slate-500 mr-0.5">速度:</span>
               {SPEED_OPTIONS.map((rate) => (
                 <button
                   key={rate}
                   onClick={() => onChangePlaybackRate(rate)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                    playbackRate === rate ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                  className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition ${
+                    playbackRate === rate
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   {rate}x
