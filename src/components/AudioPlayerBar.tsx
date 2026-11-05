@@ -16,6 +16,31 @@ import {
   Disc,
 } from 'lucide-react';
 
+// 圓形箭頭圖示，秒數文字放在圓圈正中間
+const SkipIcon: React.FC<{
+  direction: 'back' | 'forward';
+  seconds?: number;
+  sizeClass?: string;
+  textClass?: string;
+}> = ({
+  direction,
+  seconds = 3,
+  sizeClass = 'w-6 h-6 sm:w-7 sm:h-7',
+  textClass = 'text-[8px] sm:text-[9px]',
+}) => {
+  const Icon = direction === 'back' ? RotateCcw : RotateCw;
+  return (
+    <span className={`relative inline-flex items-center justify-center ${sizeClass}`}>
+      <Icon className="w-full h-full" strokeWidth={1.5} />
+      <span
+        className={`absolute inset-0 flex items-center justify-center font-bold leading-none text-indigo-600 pt-px ${textClass}`}
+      >
+        {seconds}s
+      </span>
+    </span>
+  );
+};
+
 interface Props {
   currentTrack: AudioTrack | null;
   isPlaying: boolean;
@@ -189,11 +214,10 @@ export const AudioPlayerBar: React.FC<Props> = ({
             {/* Rewind 3s */}
             <button
               onClick={() => onSkip(-3)}
-              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition relative flex items-center justify-center group"
+              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition flex items-center justify-center group"
               title="倒退 3 秒 (快捷鍵: ←)"
             >
-              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="absolute text-[8px] font-bold text-indigo-600 -bottom-0.5">3s</span>
+              <SkipIcon direction="back" />
             </button>
 
             {/* Prev Track */}
@@ -233,11 +257,10 @@ export const AudioPlayerBar: React.FC<Props> = ({
             {/* Forward 3s */}
             <button
               onClick={() => onSkip(3)}
-              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition relative flex items-center justify-center group"
+              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition flex items-center justify-center group"
               title="快進 3 秒 (快捷鍵: →)"
             >
-              <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="absolute text-[8px] font-bold text-indigo-600 -bottom-0.5">3s</span>
+              <SkipIcon direction="forward" />
             </button>
           </div>
 
@@ -467,11 +490,10 @@ export const AudioPlayerBar: React.FC<Props> = ({
             <div className="flex items-center justify-center gap-4 pt-1">
               <button
                 onClick={() => onSkip(-3)}
-                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95 relative flex items-center justify-center"
+                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95 flex items-center justify-center"
                 title="倒退 3 秒 (快捷鍵: ←)"
               >
-                <RotateCcw className="w-6 h-6" />
-                <span className="absolute text-[9px] font-bold text-indigo-600 bottom-1">3s</span>
+                <SkipIcon direction="back" sizeClass="w-7 h-7" textClass="text-[10px]" />
               </button>
               <button
                 onClick={onPrev}
@@ -493,11 +515,10 @@ export const AudioPlayerBar: React.FC<Props> = ({
               </button>
               <button
                 onClick={() => onSkip(3)}
-                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95 relative flex items-center justify-center"
+                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95 flex items-center justify-center"
                 title="快進 3 秒 (快捷鍵: →)"
               >
-                <RotateCw className="w-6 h-6" />
-                <span className="absolute text-[9px] font-bold text-indigo-600 bottom-1">3s</span>
+                <SkipIcon direction="forward" sizeClass="w-7 h-7" textClass="text-[10px]" />
               </button>
             </div>
           </div>
