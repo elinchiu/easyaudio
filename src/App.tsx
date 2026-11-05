@@ -28,7 +28,7 @@ const DURATION_CACHE_KEY = 'tb_track_durations';
 export default function App() {
   // 每次載入／重整都從空白開始：不從 localStorage 還原資料夾與歌單
   const [folderUrl, setFolderUrl] = useState<string>('');
-  const [folderName, setFolderName] = useState<string>('音檔資料夾');
+  const [folderName, setFolderName] = useState<string>('File Name');
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
 
   const [isLoadingFolder, setIsLoadingFolder] = useState<boolean>(false);
