@@ -270,7 +270,7 @@ export default function App() {
           <div className="flex items-center gap-2.5 min-w-0">
             <img
               src={`${import.meta.env.BASE_URL}icon.jpeg`}
-              alt="Easy Audio 標誌"
+              alt="Easy Audio"
               className="w-8 h-8 rounded-lg shrink-0"
               width={32}
               height={32}
