@@ -250,8 +250,27 @@ export const AudioPlayerBar: React.FC<Props> = ({
 
           {/* 右：學習輔助（速度、A-B 循環、睡眠計時、音量），僅桌面顯示 */}
           <div className="hidden md:flex items-center justify-end gap-2">
-            {/* 速度 */}
-            <div className="relative">
+            
+            {/* 速度：寬螢幕直接攤開 */}
+            <div className="hidden xl:flex items-center gap-1">
+              <span className="text-xs text-slate-500 mr-0.5">速度:</span>
+              {SPEED_OPTIONS.map((rate) => (
+                <button
+                  key={rate}
+                  onClick={() => onChangePlaybackRate(rate)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                    playbackRate === rate
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {rate}x
+                </button>
+              ))}
+            </div>
+
+            {/* 速度：較窄的桌面維持下拉選單（原本的程式碼，只多加 xl:hidden） */}
+            <div className="relative xl:hidden">
               <button
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
