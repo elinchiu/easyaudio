@@ -88,7 +88,7 @@ export const TrackListView: React.FC<Props> = ({
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
               {hasTracks
                 ? `沒有包含「${searchQuery}」的檔案`
-                : '請確認資料夾已設為「知道連結的任何人」可檢視，然後在上方貼上資料夾連結並按「匯入」，或按「重新整理」。若是私人資料夾，可以登入 Google 後讀取。'}
+                : '請確認資料夾已設為「知道連結的任何人」可檢視，然後在上方貼上資料夾連結並按「匯入」，或按「重新整理」。若是非公開資料夾，可以登入 Google 後讀取。'}
             </p>
           </div>
 
