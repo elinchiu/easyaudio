@@ -2,10 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { AudioTrack, RepeatMode, ABRepeat } from '../types/track';
 import { getTrackPlayableUrl } from '../lib/driveApi';
 
-// In-memory cache for audio object URLs so files don't re-download
+// 記憶體快取：已下載成 blob 的音檔網址，避免重複下載
 const audioBlobCache = new Map<string, string>();
 
-// onRequestAuth 保留參數以維持相容；公開資料夾不再需要它
+const setPlaybackState = (state: MediaSessionPlaybackState) => {
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
+};
+
+// _onRequestAuth 保留參數以維持相容；公開資料夾不再需要它
 export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () => void) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -13,61 +17,45 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
   const handleTrackEndRef = useRef<() => void>(() => {});
 
   const [playlist, setPlaylist] = useState<AudioTrack[]>([]);
-  const [currentTrackIndex, setCurrentTrackIndex] = useState<number>(-1);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentTime, setCurrentTime] = useState<number>(0);
-  const [duration, setDuration] = useState<number>(0);
-  const [playbackRate, setPlaybackRate] = useState<number>(1.0);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(-1);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('repeat-all');
-  const [volume, setVolume] = useState<number>(1.0);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [isLoadingAudio, setIsLoadingAudio] = useState<boolean>(false);
+  const [volume, setVolume] = useState(1.0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
 
-  // A-B Loop
-  const [abRepeat, setAbRepeat] = useState<ABRepeat>({
-    enabled: false,
-    pointA: null,
-    pointB: null,
-  });
-
-  // Sleep Timer
-  const [sleepTimerMinutes, setSleepTimerMinutes] = useState<number | null>(null);
-  const [sleepTimerSecondsLeft, setSleepTimerSecondsLeft] = useState<number | null>(null);
-
+  // A-B 區間循環
+  const [abRepeat, setAbRepeat] = useState<ABRepeat>({ enabled: false, pointA: null, pointB: null });
+  const abRepeatRef = useRef(abRepeat);
+  abRepeatRef.current = abRepeat;
+  
   const currentTrack = playlist[currentTrackIndex] || null;
 
-  // Initialize Audio element once
+  // 建立 Audio 元素（只建立一次）
   useEffect(() => {
     const audio = new Audio();
     audio.preload = 'auto';
     audioRef.current = audio;
 
     const onTimeUpdate = () => {
-      const cur = audio.currentTime;
-      setCurrentTime(cur);
+      setCurrentTime(audio.currentTime);
 
-      // Handle A-B loop check
-      setAbRepeat((prev) => {
-        if (prev.enabled && prev.pointA !== null && prev.pointB !== null) {
-          if (cur >= prev.pointB) {
-            audio.currentTime = prev.pointA;
-          }
-        }
-        return prev;
-      });
+      // A-B 循環：播到 B 點就跳回 A 點
+      const { enabled, pointA, pointB } = abRepeatRef.current;
+      if (enabled && pointA !== null && pointB !== null && audio.currentTime >= pointB) {
+        audio.currentTime = pointA;
+      }
     };
-
     const onLoadedMetadata = () => {
       setDuration(audio.duration || 0);
       setIsLoadingAudio(false);
       setAudioError(null);
     };
-
-    const onEnded = () => {
-      handleTrackEndRef.current();
-    };
-
+    const onEnded = () => handleTrackEndRef.current();
     const onError = () => {
       setIsLoadingAudio(false);
       setIsPlaying(false);
@@ -91,36 +79,7 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     };
   }, []);
 
-  // Sleep Timer countdown
-  useEffect(() => {
-    if (sleepTimerSecondsLeft === null || sleepTimerSecondsLeft <= 0) return;
-
-    const interval = setInterval(() => {
-      setSleepTimerSecondsLeft((prev) => {
-        if (prev === null || prev <= 1) {
-          if (audioRef.current) audioRef.current.pause();
-          setIsPlaying(false);
-          setSleepTimerMinutes(null);
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [sleepTimerSecondsLeft]);
-
-  // Set Sleep Timer
-  const setSleepTimer = (minutes: number | null) => {
-    setSleepTimerMinutes(minutes);
-    if (minutes === null) {
-      setSleepTimerSecondsLeft(null);
-    } else {
-      setSleepTimerSecondsLeft(minutes * 60);
-    }
-  };
-
-  // Load and play track
+  // 載入並播放指定音檔
   const playTrack = useCallback(
     async (track: AudioTrack, trackList?: AudioTrack[]) => {
       const audio = audioRef.current;
@@ -136,44 +95,36 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
       setAudioError(null);
 
       try {
-        let streamUrl: string | null = null;
-
-        // 1. Already in memory blob cache
-        if (audioBlobCache.has(track.id)) {
-          streamUrl = audioBlobCache.get(track.id)!;
-        } else {
-          // 2. 由 driveApi 決定：
-          //    - 已登入 → 用 Bearer token 下載（可播私人檔案）
-          //    - 未登入 → 直接用 Drive API + API Key 的公開串流網址
-          streamUrl = await getTrackPlayableUrl(track, accessToken);
-          if (streamUrl && streamUrl.startsWith('blob:')) {
-            audioBlobCache.set(track.id, streamUrl);
-          }
+        // 1. 記憶體快取有就直接用
+        // 2. 否則由 driveApi 決定：已登入用 Bearer token 下載（可播私人檔案），
+        //    未登入直接用 Drive API + API Key 的公開串流網址
+        let url = audioBlobCache.get(track.id);
+        if (!url) {
+          url = await getTrackPlayableUrl(track, accessToken);
+          if (url?.startsWith('blob:')) audioBlobCache.set(track.id, url);
         }
+        if (!url) throw new Error('無法取得可播放的音訊串流網址');
 
-        if (!streamUrl) {
-          throw new Error('無法取得可播放的音訊串流網址');
-        }
-
-        audio.src = streamUrl;
+        audio.src = url;
         audio.playbackRate = playbackRate;
         audio.volume = isMuted ? 0 : volume;
 
         await audio.play();
         setIsPlaying(true);
 
-        // Update Media Session for lock screen controls
+        // 鎖定畫面的媒體控制資訊
         if ('mediaSession' in navigator) {
+          const icon = (file: string) => `${import.meta.env.BASE_URL}${file}`;
           navigator.mediaSession.metadata = new MediaMetadata({
             title: track.name,
             artist: 'Easy Audio',
             album: 'Easy Audio',
             artwork: [
-              { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-              { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+              { src: icon('pwa-192x192.png'), sizes: '192x192', type: 'image/png' },
+              { src: icon('pwa-512x512.png'), sizes: '512x512', type: 'image/png' },
             ],
           });
-          navigator.mediaSession.playbackState = 'playing';
+          setPlaybackState('playing');
         }
       } catch (err: any) {
         console.error('Play track failed:', err);
@@ -184,92 +135,85 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     [playlist, playbackRate, volume, isMuted, accessToken]
   );
 
-  // Play / Pause toggle
+  // 播放 / 暫停
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio || !audio.src) {
-      if (playlist.length > 0) {
-        playTrack(playlist[0]);
-      }
+    if (!audio?.src) {
+      if (playlist.length > 0) playTrack(playlist[0]);
       return;
     }
 
     if (audio.paused) {
       audio.play().then(() => {
         setIsPlaying(true);
-        if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+        setPlaybackState('playing');
       });
     } else {
       audio.pause();
       setIsPlaying(false);
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+      setPlaybackState('paused');
     }
   }, [playlist, playTrack]);
 
-  // Next Track
+  // 下一首
   const nextTrack = useCallback(() => {
     if (playlist.length === 0) return;
-    if (repeatMode === 'shuffle') {
-      const nextIndex = Math.floor(Math.random() * playlist.length);
-      playTrack(playlist[nextIndex]);
-      return;
-    }
-    const nextIndex = (currentTrackIndex + 1) % playlist.length;
+    const nextIndex =
+      repeatMode === 'shuffle'
+        ? Math.floor(Math.random() * playlist.length)
+        : (currentTrackIndex + 1) % playlist.length;
     playTrack(playlist[nextIndex]);
   }, [playlist, currentTrackIndex, repeatMode, playTrack]);
 
-  // Previous Track
+  // 上一首
   const prevTrack = useCallback(() => {
     if (playlist.length === 0) return;
-    const prevIndex = (currentTrackIndex - 1 + playlist.length) % playlist.length;
-    playTrack(playlist[prevIndex]);
+    playTrack(playlist[(currentTrackIndex - 1 + playlist.length) % playlist.length]);
   }, [playlist, currentTrackIndex, playTrack]);
 
-  // Handle track end based on repeat mode
-  const handleTrackEnd = () => {
+  // 播完一首之後，依循環模式決定下一步
+  // 每次 render 都更新，確保 ended 事件用到最新的 playlist / repeatMode
+  handleTrackEndRef.current = () => {
+    const audio = audioRef.current;
     if (repeatMode === 'repeat-one') {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play();
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play();
       }
-    } else if (repeatMode === 'repeat-all' || repeatMode === 'shuffle') {
+    } else if (
+      repeatMode === 'repeat-all' ||
+      repeatMode === 'shuffle' ||
+      currentTrackIndex < playlist.length - 1
+    ) {
       nextTrack();
     } else {
-      if (currentTrackIndex < playlist.length - 1) {
-        nextTrack();
-      } else {
-        setIsPlaying(false);
-      }
+      setIsPlaying(false); // 一般模式：播完最後一首就停止
     }
   };
-  // 每次 render 都更新，確保 ended 事件用到最新的 playlist / repeatMode
-  handleTrackEndRef.current = handleTrackEnd;
 
-  // Seek
-  const seek = (time: number) => {
+  // 跳到指定秒數
+  const seek = useCallback((time: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
     }
-  };
+  }, []);
 
-  // Skip relative (+/- seconds)
-  const skip = (deltaSeconds: number) => {
-    if (audioRef.current) {
-      const nextTime = Math.max(0, Math.min(duration, audioRef.current.currentTime + deltaSeconds));
-      seek(nextTime);
-    }
-  };
+  // 相對跳轉（正數快轉、負數倒退）
+  const skip = useCallback(
+    (deltaSeconds: number) => {
+      const audio = audioRef.current;
+      if (audio) seek(Math.max(0, Math.min(audio.duration || 0, audio.currentTime + deltaSeconds)));
+    },
+    [seek]
+  );
 
-  // Change playback speed
   const changePlaybackRate = (rate: number) => {
     setPlaybackRate(rate);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = rate;
-    }
+    if (audioRef.current) audioRef.current.playbackRate = rate;
   };
 
-  // A-B Repeat methods
+  // A-B 循環
   const setPointA = () => {
     const cur = audioRef.current?.currentTime || 0;
     setAbRepeat((prev) => ({
@@ -288,47 +232,33 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     }));
   };
 
-  const clearABRepeat = () => {
-    setAbRepeat({ enabled: false, pointA: null, pointB: null });
-  };
+  const clearABRepeat = () => setAbRepeat({ enabled: false, pointA: null, pointB: null });
 
-  const toggleABRepeat = () => {
-    if (abRepeat.enabled) {
-      clearABRepeat();
-    } else if (abRepeat.pointA !== null && abRepeat.pointB !== null) {
-      setAbRepeat((prev) => ({ ...prev, enabled: true }));
-      seek(abRepeat.pointA);
-    }
-  };
-
-  // Volume
+  // 音量
   const changeVolume = (val: number) => {
     setVolume(val);
     setIsMuted(val === 0);
-    if (audioRef.current) {
-      audioRef.current.volume = val;
-    }
+    if (audioRef.current) audioRef.current.volume = val;
   };
 
   const toggleMute = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
-    if (audioRef.current) {
-      audioRef.current.volume = nextMuted ? 0 : volume;
-    }
+    if (audioRef.current) audioRef.current.volume = nextMuted ? 0 : volume;
   };
 
-  // Setup MediaSession action handlers (3s forward / backward)
+  // 鎖定畫面 / 耳機的控制按鈕（快轉、倒退各 3 秒）
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
 
-    navigator.mediaSession.setActionHandler('play', () => togglePlay());
-    navigator.mediaSession.setActionHandler('pause', () => togglePlay());
-    navigator.mediaSession.setActionHandler('previoustrack', () => prevTrack());
-    navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
-    navigator.mediaSession.setActionHandler('seekbackward', () => skip(-3));
-    navigator.mediaSession.setActionHandler('seekforward', () => skip(3));
-    navigator.mediaSession.setActionHandler('seekto', (details) => {
+    session.setActionHandler('play', togglePlay);
+    session.setActionHandler('pause', togglePlay);
+    session.setActionHandler('previoustrack', prevTrack);
+    session.setActionHandler('nexttrack', nextTrack);
+    session.setActionHandler('seekbackward', () => skip(-3));
+    session.setActionHandler('seekforward', () => skip(3));
+    session.setActionHandler('seekto', (details) => {
       if (details.seekTime !== undefined) seek(details.seekTime);
     });
   }, [togglePlay, prevTrack, nextTrack, skip, seek]);
@@ -346,8 +276,6 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     isLoadingAudio,
     audioError,
     abRepeat,
-    sleepTimerMinutes,
-    sleepTimerSecondsLeft,
     playlist,
     setPlaylist,
     playTrack,
@@ -363,7 +291,5 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     setPointA,
     setPointB,
     clearABRepeat,
-    toggleABRepeat,
-    setSleepTimer,
   };
 }

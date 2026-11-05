@@ -1,93 +1,66 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  User, 
-  signOut 
+import {
+  getAuth,
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  User,
+  signOut,
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase App singleton
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Configure Google Auth Provider with Google Drive Read-only Scope
+// Google 登入，並要求 Drive 唯讀權限（讀取私人資料夾用）
 export const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive.readonly');
-provider.setCustomParameters({
-  prompt: 'select_account',
-});
+provider.setCustomParameters({ prompt: 'select_account' });
 
-// Flag to track ongoing sign in flow
+// 登入進行中的旗標
 let isSigningIn = false;
 
-// Access token cached in-memory ONLY (security best practice per Google Workspace skill)
+// Access token 只存在記憶體，不寫入 localStorage（較安全，重新整理後需重新登入）
 let cachedAccessToken: string | null = null;
 
-/**
- * Initialize auth listener on application startup
- */
+/** 啟動時監聽登入狀態 */
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
-) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        // User logged into Firebase, but need fresh OAuth token for Drive API calls
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
-      }
-    } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
+) =>
+  onAuthStateChanged(auth, (user) => {
+    if (!user) cachedAccessToken = null;
+
+    if (user && cachedAccessToken) {
+      onAuthSuccess?.(user, cachedAccessToken);
+    } else if (!user || !isSigningIn) {
+      // 未登入，或已登入 Firebase 但沒有 Drive 用的 token
+      onAuthFailure?.();
     }
   });
-};
 
-/**
- * Sign in using Google popup and retrieve Google Drive API Access Token
- */
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+/** 跳出 Google 登入視窗，並取得 Drive API 的 access token */
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string }> => {
+  isSigningIn = true;
   try {
-    isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('無法取得 Google 雲端授權存取 Token');
-    }
+    const token = GoogleAuthProvider.credentialFromResult(result)?.accessToken;
+    if (!token) throw new Error('無法取得 Google 雲端授權存取 Token');
 
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error: any) {
-    console.error('Google Sign in error:', error);
-    throw error;
+    cachedAccessToken = token;
+    return { user: result.user, accessToken: token };
   } finally {
     isSigningIn = false;
   }
 };
 
-/**
- * Get current in-memory cached access token
- */
-export const getAccessToken = async (): Promise<string | null> => {
-  return cachedAccessToken;
-};
+export const getAccessToken = async () => cachedAccessToken;
 
-/**
- * Set token manually if restored in session
- */
 export const setCachedAccessToken = (token: string | null) => {
   cachedAccessToken = token;
 };
 
-/**
- * Logout and clear tokens
- */
+/** 登出並清除 token */
 export const logout = async () => {
   await signOut(auth);
   cachedAccessToken = null;

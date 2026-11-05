@@ -12,7 +12,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['icon.jpeg', 'icon.jpeg', 'icon.jpeg'],
         manifest: {
           id: '/',
           name: 'Easy Audio - 播放音檔不卡卡',

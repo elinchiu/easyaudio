@@ -1,20 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { AudioTrack, RepeatMode, ABRepeat } from '../types/track';
-import { 
-  Play, 
-  Pause, 
-  SkipBack, 
-  SkipForward, 
-  RotateCcw, 
-  RotateCw, 
-  Volume2, 
-  VolumeX, 
-  Gauge, 
-  Moon, 
-  ChevronUp, 
-  ChevronDown, 
+import {
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward,
+  RotateCcw,
+  RotateCw,
+  Volume2,
+  VolumeX,
+  Gauge,
+  ChevronUp,
+  ChevronDown,
   Disc,
 } from 'lucide-react';
+
+const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5];
+
+// 底部播放列 / 全螢幕畫面的按鈕共用樣式
+const barBtn =
+  'p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition flex items-center justify-center';
+const drawerBtn =
+  'p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95 flex items-center justify-center';
+
+const formatTime = (seconds: number): string => {
+  if (isNaN(seconds) || seconds < 0) return '00:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
 
 // 圓形箭頭圖示，秒數文字放在圓圈正中間
 const SkipIcon: React.FC<{
@@ -53,8 +67,6 @@ interface Props {
   isLoading: boolean;
   audioError: string | null;
   abRepeat: ABRepeat;
-  sleepTimerMinutes: number | null;
-  sleepTimerSecondsLeft: number | null;
   onTogglePlay: () => void;
   onNext: () => void;
   onPrev: () => void;
@@ -67,7 +79,6 @@ interface Props {
   onSetPointA: () => void;
   onSetPointB: () => void;
   onClearAB: () => void;
-  onOpenSleepTimer: () => void;
   onAuthorizeGoogle?: () => void;
 }
 
@@ -83,8 +94,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
   isLoading,
   audioError,
   abRepeat,
-  sleepTimerMinutes,
-  sleepTimerSecondsLeft,
   onTogglePlay,
   onNext,
   onPrev,
@@ -97,7 +106,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
   onSetPointA,
   onSetPointB,
   onClearAB,
-  onOpenSleepTimer,
   onAuthorizeGoogle,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -105,35 +113,35 @@ export const AudioPlayerBar: React.FC<Props> = ({
 
   // 已移除循環按鈕：固定為「播完最後一首就停止」（normal）
   useEffect(() => {
-    if (repeatMode !== 'normal') {
-      onSetRepeatMode('normal');
-    }
+    if (repeatMode !== 'normal') onSetRepeatMode('normal');
   }, [repeatMode, onSetRepeatMode]);
 
-  if (!currentTrack) {
-    return null;
-  }
+  if (!currentTrack) return null;
 
-  const formatTime = (seconds: number): string => {
-    if (isNaN(seconds) || seconds < 0) return '00:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
+  // 時間點轉成進度條上的百分比位置
+  const percentOf = (time: number | null) =>
+    time !== null && duration > 0 ? (time / duration) * 100 : null;
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const aPercent = abRepeat.pointA !== null && duration > 0 ? (abRepeat.pointA / duration) * 100 : null;
-  const bPercent = abRepeat.pointB !== null && duration > 0 ? (abRepeat.pointB / duration) * 100 : null;
+  const progressPercent = percentOf(currentTime) ?? 0;
+  const aPercent = percentOf(abRepeat.pointA);
+  const bPercent = percentOf(abRepeat.pointB);
+  const hasAB = abRepeat.pointA !== null || abRepeat.pointB !== null;
 
-  const speedOptions = [0.5, 0.75, 1.0, 1.25, 1.5];
+  const markers = [
+    { label: 'A', percent: aPercent, time: abRepeat.pointA },
+    { label: 'B', percent: bPercent, time: abRepeat.pointB },
+  ];
+  const abButtons = [
+    { label: 'A', point: abRepeat.pointA, onClick: onSetPointA, title: '設定循環起點 A' },
+    { label: 'B', point: abRepeat.pointB, onClick: onSetPointB, title: '設定循環終點 B' },
+  ];
 
   return (
     <>
-      {/* Light Theme Bottom Player */}
+      {/* 底部播放列 */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-slate-200 shadow-[0_-4px_25px_rgba(0,0,0,0.08)] transition-all">
-        {/* Progress Bar with A-B Marker */}
+        {/* 進度條（含 A-B 標記） */}
         <div className="relative w-full h-2 group cursor-pointer bg-slate-200">
-          {/* A-B Highlight Zone */}
           {aPercent !== null && bPercent !== null && (
             <div
               className="absolute top-0 bottom-0 bg-amber-400/40 border-x border-amber-500 z-10"
@@ -144,24 +152,18 @@ export const AudioPlayerBar: React.FC<Props> = ({
             />
           )}
 
-          {/* Point A Marker */}
-          {aPercent !== null && (
-            <div
-              className="absolute top-[-3px] bottom-[-3px] w-1 bg-amber-500 z-20"
-              style={{ left: `${aPercent}%` }}
-              title={`A 點: ${formatTime(abRepeat.pointA!)}`}
-            />
-          )}
-          {/* Point B Marker */}
-          {bPercent !== null && (
-            <div
-              className="absolute top-[-3px] bottom-[-3px] w-1 bg-amber-500 z-20"
-              style={{ left: `${bPercent}%` }}
-              title={`B 點: ${formatTime(abRepeat.pointB!)}`}
-            />
+          {markers.map(
+            ({ label, percent, time }) =>
+              percent !== null && (
+                <div
+                  key={label}
+                  className="absolute top-[-3px] bottom-[-3px] w-1 bg-amber-500 z-20"
+                  style={{ left: `${percent}%` }}
+                  title={`${label} 點: ${formatTime(time!)}`}
+                />
+              )
           )}
 
-          {/* Current Progress */}
           <div
             className="h-full bg-indigo-600 relative transition-all"
             style={{ width: `${progressPercent}%` }}
@@ -179,9 +181,9 @@ export const AudioPlayerBar: React.FC<Props> = ({
           />
         </div>
 
-        {/* Player Bar Content：三欄 grid，中間的播放控制固定在正中央 */}
+        {/* 三欄 grid：中間的播放控制固定在正中央 */}
         <div className="max-w-7xl mx-auto px-4 py-2.5 sm:py-3 grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 safe-bottom text-slate-800">
-          {/* Left: Track Info */}
+          {/* 左：曲目資訊 */}
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setIsExpanded(!isExpanded)}
@@ -190,7 +192,11 @@ export const AudioPlayerBar: React.FC<Props> = ({
             >
               <Disc className={`w-5 h-5 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '4s' }} />
               <div className="absolute inset-0 bg-indigo-600/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                {isExpanded ? <ChevronDown className="w-4 h-4 text-indigo-700" /> : <ChevronUp className="w-4 h-4 text-indigo-700" />}
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-indigo-700" />
+                ) : (
+                  <ChevronUp className="w-4 h-4 text-indigo-700" />
+                )}
               </div>
             </button>
 
@@ -202,34 +208,22 @@ export const AudioPlayerBar: React.FC<Props> = ({
               >
                 {currentTrack.name}
               </div>
-
               <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </div>
             </div>
           </div>
 
-          {/* Center: Main Playback Controls */}
+          {/* 中：主要播放控制 */}
           <div className="flex items-center justify-center gap-1 sm:gap-2.5">
-            {/* Rewind 3s */}
-            <button
-              onClick={() => onSkip(-3)}
-              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition flex items-center justify-center group"
-              title="倒退 3 秒 (快捷鍵: ←)"
-            >
+            <button onClick={() => onSkip(-3)} className={barBtn} title="倒退 3 秒 (快捷鍵: ←)">
               <SkipIcon direction="back" />
             </button>
 
-            {/* Prev Track */}
-            <button
-              onClick={onPrev}
-              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition"
-              title="上一首 (快捷鍵: Shift+P)"
-            >
+            <button onClick={onPrev} className={barBtn} title="上一首 (快捷鍵: Shift+P)">
               <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
-            {/* Play / Pause */}
             <button
               onClick={onTogglePlay}
               disabled={isLoading}
@@ -245,28 +239,18 @@ export const AudioPlayerBar: React.FC<Props> = ({
               )}
             </button>
 
-            {/* Next Track */}
-            <button
-              onClick={onNext}
-              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition"
-              title="下一首 (快捷鍵: Shift+N)"
-            >
+            <button onClick={onNext} className={barBtn} title="下一首 (快捷鍵: Shift+N)">
               <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
-            {/* Forward 3s */}
-            <button
-              onClick={() => onSkip(3)}
-              className="p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition flex items-center justify-center group"
-              title="快進 3 秒 (快捷鍵: →)"
-            >
+            <button onClick={() => onSkip(3)} className={barBtn} title="快進 3 秒 (快捷鍵: →)">
               <SkipIcon direction="forward" />
             </button>
           </div>
 
-          {/* Right: Study Helper Controls (Speed, A-B Loop, Sleep, Volume) */}
+          {/* 右：學習輔助（速度、A-B 循環、睡眠計時、音量），僅桌面顯示 */}
           <div className="hidden md:flex items-center justify-end gap-2">
-            {/* Speed Selector */}
+            {/* 速度 */}
             <div className="relative">
               <button
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
@@ -279,7 +263,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
 
               {showSpeedMenu && (
                 <div className="absolute bottom-full mb-2 right-0 bg-white border border-slate-200 rounded-xl p-1.5 shadow-xl grid grid-cols-2 gap-1 w-32 z-50">
-                  {speedOptions.map((rate) => (
+                  {SPEED_OPTIONS.map((rate) => (
                     <button
                       key={rate}
                       onClick={() => {
@@ -287,9 +271,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                         setShowSpeedMenu(false);
                       }}
                       className={`text-xs py-1 px-2 rounded-lg text-center font-medium transition ${
-                        playbackRate === rate
-                          ? 'bg-indigo-600 text-white'
-                          : 'text-slate-700 hover:bg-slate-100'
+                        playbackRate === rate ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-slate-100'
                       }`}
                     >
                       {rate}x
@@ -299,31 +281,21 @@ export const AudioPlayerBar: React.FC<Props> = ({
               )}
             </div>
 
-            {/* A-B Loop buttons */}
+            {/* A-B 循環 */}
             <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
-              <button
-                onClick={onSetPointA}
-                className={`text-[10px] font-bold px-2 py-1 rounded-lg transition ${
-                  abRepeat.pointA !== null
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="設定循環起點 A"
-              >
-                A
-              </button>
-              <button
-                onClick={onSetPointB}
-                className={`text-[10px] font-bold px-2 py-1 rounded-lg transition ${
-                  abRepeat.pointB !== null
-                    ? 'bg-amber-500 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="設定循環終點 B"
-              >
-                B
-              </button>
-              {(abRepeat.pointA !== null || abRepeat.pointB !== null) && (
+              {abButtons.map(({ label, point, onClick, title }) => (
+                <button
+                  key={label}
+                  onClick={onClick}
+                  title={title}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-lg transition ${
+                    point !== null ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              {hasAB && (
                 <button
                   onClick={onClearAB}
                   className="text-[10px] px-1.5 py-1 text-slate-400 hover:text-rose-500 font-bold"
@@ -334,21 +306,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
               )}
             </div>
 
-            {/* Sleep Timer */}
-            <button
-              onClick={onOpenSleepTimer}
-              className={`p-2 rounded-xl hover:bg-slate-100 transition relative ${
-                sleepTimerMinutes !== null ? 'text-indigo-600' : 'text-slate-600 hover:text-slate-900'
-              }`}
-              title="定時睡眠關閉"
-            >
-              <Moon className="w-4 h-4" />
-              {sleepTimerSecondsLeft !== null && sleepTimerSecondsLeft > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
-              )}
-            </button>
-
-            {/* Volume */}
+            {/* 音量 */}
             <div className="flex items-center gap-1.5 ml-1">
               <button
                 onClick={onToggleMute}
@@ -374,7 +332,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Audio Error Banner */}
+        {/* 播放錯誤提示 */}
         {audioError && (
           <div className="bg-rose-50 text-rose-800 text-xs py-2 px-4 border-t border-rose-200 font-medium flex items-center justify-between gap-3 flex-wrap">
             <span>{audioError}</span>
@@ -390,10 +348,9 @@ export const AudioPlayerBar: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Full-screen Mobile Drawer (Light Theme) */}
+      {/* 全螢幕展開畫面（手機） */}
       {isExpanded && (
         <div className="fixed inset-0 z-50 bg-white/98 backdrop-blur-2xl flex flex-col justify-between p-6 animate-in slide-in-from-bottom duration-200 text-slate-800">
-          {/* Header */}
           <div className="flex items-center justify-between">
             <button
               onClick={() => setIsExpanded(false)}
@@ -403,26 +360,21 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Central Track info */}
+          {/* 曲目資訊 */}
           <div className="flex flex-col items-center justify-center my-auto text-center px-4">
             <div className="w-48 h-48 rounded-3xl bg-indigo-50 border border-indigo-100 flex flex-col items-center justify-center shadow-lg text-indigo-600 p-6 relative">
               <Disc className={`w-24 h-24 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
             </div>
-
             <h2 className="mt-6 text-lg sm:text-xl font-bold text-slate-800 max-w-md break-all leading-relaxed">
               {currentTrack.name}
             </h2>
           </div>
 
-          {/* Expanded Controls */}
           <div className="space-y-4 max-w-lg mx-auto w-full pb-6">
-            {/* Progress */}
+            {/* 進度 */}
             <div>
               <div className="relative w-full h-2 rounded-full bg-slate-200 cursor-pointer overflow-hidden mb-2">
-                <div
-                  className="h-full bg-indigo-600"
-                  style={{ width: `${progressPercent}%` }}
-                />
+                <div className="h-full bg-indigo-600" style={{ width: `${progressPercent}%` }} />
               </div>
               <div className="flex justify-between text-xs text-slate-500 font-mono">
                 <span>{formatTime(currentTime)}</span>
@@ -430,34 +382,31 @@ export const AudioPlayerBar: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* A-B Repeat Card for Shadowing */}
+            {/* A-B 跟讀循環 */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
               <div className="text-xs text-slate-700">
                 <div className="font-bold text-slate-800">A-B 區間跟讀循環</div>
                 <div className="text-[11px] text-slate-500">
-                  {abRepeat.pointA !== null ? `A: ${formatTime(abRepeat.pointA)}` : '尚未設 A 點'}
-                  {' · '}
-                  {abRepeat.pointB !== null ? `B: ${formatTime(abRepeat.pointB)}` : '尚未設 B 點'}
+                  {abButtons
+                    .map(({ label, point }) =>
+                      point !== null ? `${label}: ${formatTime(point)}` : `尚未設 ${label} 點`
+                    )
+                    .join(' · ')}
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <button
-                  onClick={onSetPointA}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    abRepeat.pointA !== null ? 'bg-amber-500 text-white' : 'bg-white border border-slate-200 text-slate-700'
-                  }`}
-                >
-                  設 A 點
-                </button>
-                <button
-                  onClick={onSetPointB}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                    abRepeat.pointB !== null ? 'bg-amber-500 text-white' : 'bg-white border border-slate-200 text-slate-700'
-                  }`}
-                >
-                  設 B 點
-                </button>
-                {(abRepeat.pointA !== null || abRepeat.pointB !== null) && (
+                {abButtons.map(({ label, point, onClick }) => (
+                  <button
+                    key={label}
+                    onClick={onClick}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                      point !== null ? 'bg-amber-500 text-white' : 'bg-white border border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    設 {label} 點
+                  </button>
+                ))}
+                {hasAB && (
                   <button
                     onClick={onClearAB}
                     className="p-1.5 text-xs text-slate-400 hover:text-rose-500 font-bold"
@@ -468,56 +417,44 @@ export const AudioPlayerBar: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Speed row */}
-            <div className="flex items-center justify-center text-xs text-slate-600 px-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">速度:</span>
-                {speedOptions.map((rate) => (
-                  <button
-                    key={rate}
-                    onClick={() => onChangePlaybackRate(rate)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                      playbackRate === rate ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {rate}x
-                  </button>
-                ))}
-              </div>
+            {/* 速度 */}
+            <div className="flex items-center justify-center gap-1.5 text-xs text-slate-600 px-1">
+              <span className="text-slate-500">速度:</span>
+              {SPEED_OPTIONS.map((rate) => (
+                <button
+                  key={rate}
+                  onClick={() => onChangePlaybackRate(rate)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                    playbackRate === rate ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {rate}x
+                </button>
+              ))}
             </div>
 
-            {/* Playback Controls Row */}
+            {/* 播放控制 */}
             <div className="flex items-center justify-center gap-4 pt-1">
-              <button
-                onClick={() => onSkip(-3)}
-                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95 flex items-center justify-center"
-                title="倒退 3 秒 (快捷鍵: ←)"
-              >
+              <button onClick={() => onSkip(-3)} className={drawerBtn} title="倒退 3 秒 (快捷鍵: ←)">
                 <SkipIcon direction="back" sizeClass="w-7 h-7" textClass="text-[10px]" />
               </button>
-              <button
-                onClick={onPrev}
-                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95"
-              >
+              <button onClick={onPrev} className={drawerBtn}>
                 <SkipBack className="w-6 h-6" />
               </button>
               <button
                 onClick={onTogglePlay}
                 className="w-16 h-16 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-200 active:scale-95"
               >
-                {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
+                {isPlaying ? (
+                  <Pause className="w-8 h-8 fill-current" />
+                ) : (
+                  <Play className="w-8 h-8 fill-current ml-1" />
+                )}
               </button>
-              <button
-                onClick={onNext}
-                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95"
-              >
+              <button onClick={onNext} className={drawerBtn}>
                 <SkipForward className="w-6 h-6" />
               </button>
-              <button
-                onClick={() => onSkip(3)}
-                className="p-3 text-slate-600 hover:text-slate-900 rounded-full bg-slate-100 active:scale-95 flex items-center justify-center"
-                title="快進 3 秒 (快捷鍵: →)"
-              >
+              <button onClick={() => onSkip(3)} className={drawerBtn} title="快進 3 秒 (快捷鍵: →)">
                 <SkipIcon direction="forward" sizeClass="w-7 h-7" textClass="text-[10px]" />
               </button>
             </div>

@@ -5,58 +5,46 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+// 是否已安裝（以主畫面 App 的方式開啟）
+const checkStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches ||
+  (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
 export function usePWAInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(checkStandalone);
+  const [isIOS] = useState(() => /iphone|ipad|ipod/i.test(navigator.userAgent));
 
   useEffect(() => {
-    // Detect standalone mode (already installed or running in home screen)
-    const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    setIsInstalled(isStandalone);
-
-    // Detect iOS devices
-    const userAgent = window.navigator.userAgent.toLowerCase();
-    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
-    setIsIOS(isIOSDevice);
-
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
+    const onBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault(); // 擋掉瀏覽器預設的安裝提示，改由自己的按鈕觸發
       setDeferredPrompt(e as BeforeInstallPromptEvent);
     };
-
-    const handleAppInstalled = () => {
+    const onAppInstalled = () => {
       setIsInstalled(true);
       setDeferredPrompt(null);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onAppInstalled);
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onAppInstalled);
     };
   }, []);
 
+  /** 跳出安裝視窗；使用者按下安裝回傳 true */
   const install = async () => {
     if (!deferredPrompt) return false;
+
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-      return true;
-    }
-    return false;
+    if (outcome !== 'accepted') return false;
+
+    setIsInstalled(true);
+    setDeferredPrompt(null);
+    return true;
   };
 
-  return {
-    isInstallable: !!deferredPrompt,
-    isInstalled,
-    isIOS,
-    install,
-  };
+  return { isInstallable: !!deferredPrompt, isInstalled, isIOS, install };
 }

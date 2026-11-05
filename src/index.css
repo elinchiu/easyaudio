@@ -3,7 +3,7 @@
 /* 主題色：#E0F8C7（淺綠）、#36415A（深藍灰）
    把 indigo / slate 色階換成主題色，元件不用逐一修改 */
 @theme {
-  /* 英文：Google Sans Flex（ExtraLight 200），中文：Chiron GoRound TC（Light 300） */
+  /* 英文：Google Sans Flex，中文：Chiron GoRound TC */
   --font-sans: "Google Sans Flex", "Chiron GoRound TC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
 
   /* 字重：一般 400，強調 500 */
@@ -41,13 +41,11 @@
 @layer base {
   html, body {
     @apply bg-slate-50 text-slate-800 antialiased selection:bg-indigo-600 selection:text-indigo-100 min-h-screen;
-    font-family: "Google Sans Flex", "Chiron GoRound TC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
-    font-weight: 400;
     -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* Light theme smooth scrollbars */
+/* 捲軸 */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -66,7 +64,7 @@
   background: rgba(54, 65, 90, 0.6);
 }
 
-/* Safe area padding for mobile standalone PWA */
+/* 手機 PWA 底部安全區域 */
 .safe-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
 }

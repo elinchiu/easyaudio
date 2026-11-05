@@ -17,8 +17,8 @@ import { googleSignIn, initAuth } from './lib/firebase';
 // Components
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
-import { SleepTimerModal } from './components/SleepTimerModal';
 import { GoogleAuthModal } from './components/GoogleAuthModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
 
 import { 
   FolderSync, 
@@ -71,7 +71,6 @@ export default function App() {
   const lastSeenDurationRef = useRef<number>(0);
 
   // Modals state
-  const [isSleepModalOpen, setIsSleepModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
 
@@ -418,8 +417,6 @@ export default function App() {
         isLoading={player.isLoadingAudio}
         audioError={player.audioError}
         abRepeat={player.abRepeat}
-        sleepTimerMinutes={player.sleepTimerMinutes}
-        sleepTimerSecondsLeft={player.sleepTimerSecondsLeft}
         onTogglePlay={player.togglePlay}
         onNext={player.nextTrack}
         onPrev={player.prevTrack}
@@ -432,17 +429,7 @@ export default function App() {
         onSetPointA={player.setPointA}
         onSetPointB={player.setPointB}
         onClearAB={player.clearABRepeat}
-        onOpenSleepTimer={() => setIsSleepModalOpen(true)}
         onAuthorizeGoogle={() => handleAuthorize()}
-      />
-
-      {/* Sleep Timer Modal */}
-      <SleepTimerModal
-        isOpen={isSleepModalOpen}
-        onClose={() => setIsSleepModalOpen(false)}
-        currentMinutes={player.sleepTimerMinutes}
-        secondsLeft={player.sleepTimerSecondsLeft}
-        onSetTimer={player.setSleepTimer}
       />
 
       {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}
