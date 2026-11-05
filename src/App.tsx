@@ -387,6 +387,12 @@ export default function App() {
         />
       </main>
 
+      <footer className="text-center text-[11px] text-slate-400 py-6">
+        <a href={`${import.meta.env.BASE_URL}privacy.html`} className="hover:underline">Privacy Policy</a>
+        <span className="mx-2">·</span>
+        <a href={`${import.meta.env.BASE_URL}terms.html`} className="hover:underline">Terms</a>
+      </footer>
+
       {/* Persistent Bottom Audio Player (Light Mode with 3s skip) */}
       <AudioPlayerBar
         currentTrack={player.currentTrack}
