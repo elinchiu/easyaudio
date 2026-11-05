@@ -6,12 +6,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioTrack } from './types/track';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
-import { 
-  DEFAULT_FOLDER_ID, 
-  fetchFolderAudioTracks, 
-  extractFolderId, 
-  getTrackPlayableUrl 
-} from './lib/driveApi';
+import { fetchFolderAudioTracks, extractFolderId } from './lib/driveApi';
 import { googleSignIn, initAuth } from './lib/firebase';
 
 // Components
@@ -31,23 +26,10 @@ import {
 const DURATION_CACHE_KEY = 'tb_track_durations';
 
 export default function App() {
-  // Folder URL / ID state
-  const [folderUrl, setFolderUrl] = useState<string>(() => {
-    return localStorage.getItem('tb_folder_url') || `https://drive.google.com/drive/folders/${DEFAULT_FOLDER_ID}`;
-  });
-  const [folderName, setFolderName] = useState<string>('File Name');
-  const [tracks, setTracks] = useState<AudioTrack[]>(() => {
-    try {
-      const stored = localStorage.getItem('tb_folder_tracks');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      console.warn('Failed to parse cached tracks:', e);
-    }
-    return [];
-  });
+  // 每次載入／重整都從空白開始：不從 localStorage 還原資料夾與歌單
+  const [folderUrl, setFolderUrl] = useState<string>('');
+  const [folderName, setFolderName] = useState<string>('音檔資料夾');
+  const [tracks, setTracks] = useState<AudioTrack[]>([]);
 
   const [isLoadingFolder, setIsLoadingFolder] = useState<boolean>(false);
   const [folderError, setFolderError] = useState<string | null>(null);
@@ -74,6 +56,17 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
 
+  // 清掉舊版本殘留在瀏覽器裡的資料夾／歌單快取（只跑一次）
+  useEffect(() => {
+    ['tb_folder_url', 'tb_folder_tracks', 'tb_folder_name'].forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {
+        // ignore
+      }
+    });
+  }, []);
+
   // Authorize Google Drive handler（僅供私人資料夾使用，公開資料夾不需要）
   const handleAuthorize = async (trackToPlay?: AudioTrack | null) => {
     setIsAuthorizing(true);
@@ -85,8 +78,10 @@ export default function App() {
         const targetTrack = trackToPlay || pendingTrack;
         setPendingTrack(null);
 
-        // Load entire folder with the fresh token
-        await loadEntireFolder(folderUrl, false, res.accessToken, targetTrack);
+        // 只有已經有資料夾時才重新載入；空白狀態下登入就只登入
+        if (folderUrl) {
+          await loadEntireFolder(folderUrl, false, res.accessToken, targetTrack);
+        }
       }
     } catch (e) {
       console.warn('Authorization cancelled or failed:', e);
@@ -174,11 +169,6 @@ export default function App() {
         setTracks(result.tracks);
         player.setPlaylist(result.tracks);
 
-        // Persist to localStorage so the app loads instantly without re-fetching
-        localStorage.setItem('tb_folder_url', targetUrlOrId);
-        localStorage.setItem('tb_folder_tracks', JSON.stringify(result.tracks));
-        localStorage.setItem('tb_folder_name', result.folderName);
-
         if (trackToPlayAfter) {
           // Play the requested track right away
           const matched = result.tracks.find(t => t.id === trackToPlayAfter.id) || trackToPlayAfter;
@@ -213,13 +203,6 @@ export default function App() {
   const handleTrackClick = (track: AudioTrack) => {
     player.playTrack(track, tracks);
   };
-
-  // Initial load if no tracks cached
-  useEffect(() => {
-    if (tracks.length === 0) {
-      loadEntireFolder(folderUrl);
-    }
-  }, []);
 
   // Keyboard Shortcuts:
   // Space (播放/暫停)、←/→ (±3 秒)、Shift+N (下一個音檔)、Shift+P (上一個音檔)
@@ -358,7 +341,7 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => loadEntireFolder(folderUrl, false)}
-              disabled={isLoadingFolder}
+              disabled={isLoadingFolder || !folderUrl}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 active:scale-95 transition disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingFolder ? 'animate-spin' : ''}`} />
