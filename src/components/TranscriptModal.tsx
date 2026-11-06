@@ -421,7 +421,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <div className="space-y-1.5 max-w-md">
                 <h4 className="text-base font-bold text-slate-900">目前音檔尚未轉錄文字</h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  點擊下方按鈕，直接在瀏覽器中用 <b>Whisper 語音模型</b> 辨識此音檔的內容，語言會自動偵測。辨識後會隨播放時間逐句高亮，點擊任一句就能跳到該處播放。
+                  點擊下方按鈕辨識此音檔的內容，點擊任一句就能跳到該處播放。
                 </p>
               </div>
 
