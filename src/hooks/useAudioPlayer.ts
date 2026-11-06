@@ -263,6 +263,29 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     });
   }, [togglePlay, prevTrack, nextTrack, skip, seek]);
 
+  // 取得目前音檔的 Blob，供 AI 產生歌詞辨識使用
+  const getCurrentAudioBlob = useCallback(async (): Promise<Blob | null> => {
+    if (!currentTrack) return null;
+    try {
+      // 1. 如果已經有記憶體快取的 Blob URL 或 audio.src 是 blob:
+      const src = audioRef.current?.src || audioBlobCache.get(currentTrack.id);
+      if (src && src.startsWith('blob:')) {
+        const res = await fetch(src);
+        return await res.blob();
+      }
+
+      // 2. 否則透過 driveApi 取得可播放網址並下載
+      const playableUrl = await getTrackPlayableUrl(currentTrack, accessToken);
+      if (playableUrl) {
+        const res = await fetch(playableUrl);
+        return await res.blob();
+      }
+    } catch (e) {
+      console.warn('Failed to retrieve audio blob for transcription:', e);
+    }
+    return null;
+  }, [currentTrack, accessToken]);
+
   return {
     currentTrack,
     currentTrackIndex,
@@ -291,5 +314,6 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     setPointA,
     setPointB,
     clearABRepeat,
+    getCurrentAudioBlob,
   };
 }

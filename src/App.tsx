@@ -3,17 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AudioTrack } from './types/track';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { AudioTrack, LyricSegment } from './types/track';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { fetchFolderAudioTracks, extractFolderId } from './lib/driveApi';
 import { googleSignIn, initAuth } from './lib/firebase';
+import { getStoredLyrics } from './lib/lyricsService';
 
 // Components
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { GoogleAuthModal } from './components/GoogleAuthModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { SyncedLyricsView } from './components/SyncedLyricsView';
 
 import { 
   FolderSync, 
@@ -56,6 +58,10 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
 
+  // 即時歌詞狀態
+  const [isLyricsOpen, setIsLyricsOpen] = useState<boolean>(false);
+  const [currentLyrics, setCurrentLyrics] = useState<LyricSegment[] | null>(null);
+
   // 清掉舊版本殘留在瀏覽器裡的資料夾／歌單快取（只跑一次）
   useEffect(() => {
     ['tb_folder_url', 'tb_folder_tracks', 'tb_folder_name'].forEach((k) => {
@@ -92,6 +98,34 @@ export default function App() {
 
   // Audio player hook with accessToken
   const player = useAudioPlayer(accessToken, handleAuthorize);
+
+  // 當切換曲目時，自動讀取該曲目已儲存的即時歌詞
+  useEffect(() => {
+    const trackId = player.currentTrack?.id;
+    if (trackId) {
+      const stored = getStoredLyrics(trackId);
+      setCurrentLyrics(stored);
+    } else {
+      setCurrentLyrics(null);
+    }
+  }, [player.currentTrack?.id]);
+
+  // 計算目前播放秒數對應的即時歌詞單句
+  const currentLyricText = useMemo(() => {
+    if (!currentLyrics || currentLyrics.length === 0) return '';
+    const cur = player.currentTime;
+    for (let i = 0; i < currentLyrics.length; i++) {
+      if (cur >= currentLyrics[i].startTime && cur < currentLyrics[i].endTime) {
+        return currentLyrics[i].text;
+      }
+    }
+    for (let i = currentLyrics.length - 1; i >= 0; i--) {
+      if (cur >= currentLyrics[i].startTime) {
+        return currentLyrics[i].text;
+      }
+    }
+    return '';
+  }, [currentLyrics, player.currentTime]);
 
   // 播放時記錄目前這首的時長
   useEffect(() => {
@@ -419,6 +453,24 @@ export default function App() {
         onSetPointB={player.setPointB}
         onClearAB={player.clearABRepeat}
         onAuthorizeGoogle={() => handleAuthorize()}
+        onOpenLyrics={() => setIsLyricsOpen(true)}
+        hasLyrics={!!(currentLyrics && currentLyrics.length > 0)}
+        currentLyricText={currentLyricText}
+      />
+
+      {/* 即時歌詞與字幕彈窗 */}
+      <SyncedLyricsView
+        isOpen={isLyricsOpen}
+        onClose={() => setIsLyricsOpen(false)}
+        currentTrack={player.currentTrack}
+        currentTime={player.currentTime}
+        duration={player.duration}
+        isPlaying={player.isPlaying}
+        onSeek={player.seek}
+        onTogglePlay={player.togglePlay}
+        lyrics={currentLyrics}
+        onUpdateLyrics={(segments) => setCurrentLyrics(segments)}
+        getAudioBlob={player.getCurrentAudioBlob}
       />
 
       {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}

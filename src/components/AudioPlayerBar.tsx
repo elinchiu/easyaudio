@@ -13,6 +13,7 @@ import {
   ChevronUp,
   ChevronDown,
   Disc,
+  FileText,
 } from 'lucide-react';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5];
@@ -80,6 +81,9 @@ interface Props {
   onSetPointB: () => void;
   onClearAB: () => void;
   onAuthorizeGoogle?: () => void;
+  onOpenLyrics?: () => void;
+  hasLyrics?: boolean;
+  currentLyricText?: string;
 }
 
 export const AudioPlayerBar: React.FC<Props> = ({
@@ -107,6 +111,9 @@ export const AudioPlayerBar: React.FC<Props> = ({
   onSetPointB,
   onClearAB,
   onAuthorizeGoogle,
+  onOpenLyrics,
+  hasLyrics,
+  currentLyricText,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -208,10 +215,32 @@ export const AudioPlayerBar: React.FC<Props> = ({
               >
                 {currentTrack.name}
               </div>
-              <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </div>
+              {currentLyricText ? (
+                <div
+                  onClick={onOpenLyrics}
+                  className="text-[11px] text-[#36415A] font-medium truncate cursor-pointer hover:underline flex items-center gap-1 mt-0.5"
+                  title="點擊開啟即時歌詞"
+                >
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-[#E0F8C7] font-bold shrink-0">歌詞</span>
+                  <span className="truncate">{currentLyricText}</span>
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </div>
+              )}
             </div>
+
+            {/* 行動端快捷歌詞按鈕 */}
+            {onOpenLyrics && (
+              <button
+                onClick={onOpenLyrics}
+                className="md:hidden p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition shrink-0"
+                title="即時歌詞"
+              >
+                <FileText className={`w-4 h-4 ${hasLyrics ? 'text-[#36415A]' : 'text-slate-400'}`} />
+              </button>
+            )}
           </div>
 
           {/* 中：主要播放控制 */}
@@ -325,6 +354,22 @@ export const AudioPlayerBar: React.FC<Props> = ({
               )}
             </div>
 
+            {/* 歌詞按鈕 */}
+            {onOpenLyrics && (
+              <button
+                onClick={onOpenLyrics}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-xl transition border shadow-xs ${
+                  hasLyrics
+                    ? 'bg-[#E0F8C7] text-[#36415A] border-emerald-300'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                }`}
+                title="即時歌詞字幕"
+              >
+                <FileText className="w-3.5 h-3.5 text-[#36415A]" />
+                <span>歌詞</span>
+              </button>
+            )}
+
             {/* 音量 */}
             <div className="flex items-center gap-1.5 ml-1">
               <button
@@ -387,6 +432,32 @@ export const AudioPlayerBar: React.FC<Props> = ({
             <h2 className="mt-6 text-lg sm:text-xl font-bold text-slate-800 max-w-md break-all leading-relaxed">
               {currentTrack.name}
             </h2>
+
+            {currentLyricText ? (
+              <div
+                onClick={() => {
+                  setIsExpanded(false);
+                  onOpenLyrics?.();
+                }}
+                className="mt-3 px-4 py-2 rounded-2xl bg-[#E0F8C7] text-[#36415A] font-medium text-xs sm:text-sm cursor-pointer shadow-sm hover:scale-105 active:scale-95 transition flex items-center gap-2 max-w-sm text-center"
+              >
+                <FileText className="w-4 h-4 text-[#36415A] shrink-0" />
+                <span className="truncate">{currentLyricText}</span>
+              </div>
+            ) : null}
+
+            {onOpenLyrics && (
+              <button
+                onClick={() => {
+                  setIsExpanded(false);
+                  onOpenLyrics();
+                }}
+                className="mt-3.5 flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 shadow-xs active:scale-95 transition"
+              >
+                <FileText className="w-3.5 h-3.5 text-[#36415A]" />
+                <span>{hasLyrics ? '展開即時歌詞' : '產生/新增即時歌詞'}</span>
+              </button>
+            )}
           </div>
 
           <div className="space-y-4 max-w-lg mx-auto w-full pb-6">
