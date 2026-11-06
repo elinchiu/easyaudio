@@ -1,8 +1,3 @@
-import { pipeline, env } from '@xenova/transformers';
-
-env.allowLocalModels = false;
-env.useBrowserCache = true;
-
 export interface TranscriptSegment {
   id: number;
   start: number;
@@ -19,11 +14,24 @@ export interface TrackTranscript {
   createdAt: number;
 }
 
+export interface TranscribeProgress {
+  stage: 'downloading' | 'decoding' | 'transcribing' | 'completed' | 'error';
+  message: string;
+  percent?: number;
+}
+
+// 使用的 Whisper 模型（量化版）。要換模型只需要改這兩行：
+//   whisper-base  下載量約 80–100MB，速度快、準確度普通
+//   whisper-small 下載量約 250–290MB，準確度明顯較好，但較慢、較吃記憶體
+const WHISPER_MODEL = 'Xenova/whisper-small';
+const MODEL_DOWNLOAD_HINT = '約 250MB';
+
+// 下載進度只統計大於這個大小的檔案（也就是真正的模型檔），
+// 否則幾 KB 的設定檔一下載完，進度條就會先衝到 100%。
+const MIN_TRACKED_FILE_BYTES = 5 * 1024 * 1024;
+
 const TRANSCRIPT_STORAGE_PREFIX = 'ea_transcript_';
 
-/**
- * Get cached transcript from localStorage
- */
 export function getCachedTranscript(trackId: string): TrackTranscript | null {
   try {
     const raw = localStorage.getItem(TRANSCRIPT_STORAGE_PREFIX + trackId);
@@ -35,9 +43,6 @@ export function getCachedTranscript(trackId: string): TrackTranscript | null {
   }
 }
 
-/**
- * Save transcript to localStorage
- */
 export function saveCachedTranscript(transcript: TrackTranscript): void {
   try {
     localStorage.setItem(TRANSCRIPT_STORAGE_PREFIX + transcript.trackId, JSON.stringify(transcript));
@@ -47,9 +52,9 @@ export function saveCachedTranscript(transcript: TrackTranscript): void {
 }
 
 /**
- * Decode an audio Blob to 16kHz mono Float32Array
+ * 把音檔 Blob 解碼成 Whisper 需要的 16kHz 單聲道 Float32Array
  */
-export async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
+async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
   const arrayBuffer = await audioBlob.arrayBuffer();
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
   const audioCtx = new AudioContextClass();
@@ -57,8 +62,13 @@ export async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array>
   try {
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
     const targetSampleRate = 16000;
-    const duration = audioBuffer.duration;
-    const offlineCtx = new OfflineAudioContext(1, Math.ceil(duration * targetSampleRate), targetSampleRate);
+    // OfflineAudioContext 是 Web Audio 的「非即時渲染」（不經過喇叭、一次算完），
+    // 在這裡只是拿來重新取樣成 16kHz 並混成單聲道，跟 App 有沒有網路無關。
+    const offlineCtx = new OfflineAudioContext(
+      1,
+      Math.ceil(audioBuffer.duration * targetSampleRate),
+      targetSampleRate
+    );
 
     const source = offlineCtx.createBufferSource();
     source.buffer = audioBuffer;
@@ -66,7 +76,9 @@ export async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array>
     source.start(0);
 
     const rendered = await offlineCtx.startRendering();
-    return rendered.getChannelData(0);
+    // getChannelData 回傳的是 AudioBuffer 內部資料的檢視；
+    // slice() 複製成獨立的資料，之後轉移給 Worker 才不會有問題。
+    return rendered.getChannelData(0).slice();
   } finally {
     if (audioCtx.state !== 'closed') {
       audioCtx.close().catch(() => {});
@@ -74,148 +86,144 @@ export async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array>
   }
 }
 
+function abortError() {
+  return new DOMException('已取消辨識', 'AbortError');
+}
+
 /**
- * Fallback direct pipeline in main thread if Web Worker is unavailable
+ * 在 Web Worker 裡跑 Whisper。
+ * 傳入 signal 可以中途取消（會直接 terminate worker）。
  */
-let mainThreadPipelinePromise: Promise<any> | null = null;
-async function getMainThreadTranscriber(onProgress?: (data: any) => void) {
-  if (!mainThreadPipelinePromise) {
-    mainThreadPipelinePromise = pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', {
-      progress_callback: onProgress,
-    });
-  }
-  return mainThreadPipelinePromise;
-}
+function runWhisperWorker(
+  audio: Float32Array,
+  language: string,
+  onProgress?: (progress: TranscribeProgress) => void,
+  signal?: AbortSignal
+): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
 
-export interface TranscribeProgress {
-  stage: 'downloading' | 'decoding' | 'transcribing' | 'completed' | 'error';
-  message: string;
-  percent?: number;
+    const worker = new Worker(new URL('../workers/whisperWorker.ts', import.meta.url), {
+      type: 'module',
+    });
+
+    const finish = () => {
+      signal?.removeEventListener('abort', handleAbort);
+      worker.terminate();
+    };
+    const handleAbort = () => {
+      finish();
+      reject(abortError());
+    };
+    signal?.addEventListener('abort', handleAbort);
+
+    // 模型由好幾個檔案組成，各自回報進度；這裡把它們合計成一條進度條
+    const files = new Map<string, { loaded: number; total: number }>();
+
+    worker.onmessage = (e: MessageEvent) => {
+      const { status, data, output, error } = e.data || {};
+
+      if (status === 'model-progress') {
+        const isProgress =
+          data?.status === 'progress' &&
+          typeof data.file === 'string' &&
+          typeof data.loaded === 'number' &&
+          typeof data.total === 'number';
+
+        if (isProgress && data.total >= MIN_TRACKED_FILE_BYTES) {
+          files.set(data.file, { loaded: data.loaded, total: data.total });
+
+          let loaded = 0;
+          let total = 0;
+          files.forEach((f) => {
+            loaded += f.loaded;
+            total += f.total;
+          });
+          const percent = Math.min(100, Math.floor((loaded / total) * 100));
+
+          onProgress?.({
+            stage: 'downloading',
+            message:
+              percent >= 100
+                ? '模型下載完成，正在載入模型...'
+                : `正在下載語音辨識模型 ${percent}%`,
+            percent,
+          });
+        }
+      } else if (status === 'transcribing') {
+        onProgress?.({ stage: 'transcribing', message: '正在辨識音檔內容（德文）...' });
+      } else if (status === 'complete') {
+        finish();
+        resolve(output);
+      } else if (status === 'error') {
+        finish();
+        reject(new Error(error || 'Whisper 辨識錯誤'));
+      }
+    };
+
+    worker.onerror = (e) => {
+      finish();
+      reject(new Error(e.message || 'Whisper Worker 載入失敗'));
+    };
+
+    // 用「轉移」而不是「複製」把音訊交給 worker，可以省下一份記憶體
+    // （轉移之後，這邊的 audio 就變成空的，不能再使用）
+    worker.postMessage(
+      { type: 'transcribe', audioData: audio, language, model: WHISPER_MODEL },
+      [audio.buffer]
+    );
+  });
 }
 
 /**
- * Transcribe audio using Whisper in the browser (via Web Worker with main-thread fallback)
+ * 在瀏覽器中用 Whisper 辨識音檔
  */
 export async function transcribeAudioWithWhisper(
   audioBlob: Blob,
   trackId: string,
   trackName: string,
   language = 'german',
-  onProgress?: (progress: TranscribeProgress) => void
+  onProgress?: (progress: TranscribeProgress) => void,
+  signal?: AbortSignal
 ): Promise<TrackTranscript> {
-  onProgress?.({
-    stage: 'decoding',
-    message: '正在將音訊轉換為 Whisper 格式 (16kHz)...',
-  });
+  onProgress?.({ stage: 'decoding', message: '正在轉換音訊格式（16kHz 單聲道）...' });
 
-  const float32Data = await decodeAudioTo16kHz(audioBlob);
+  const audio = await decodeAudioTo16kHz(audioBlob);
+  if (audio.length === 0) {
+    throw new Error('音檔解碼後是空的，無法辨識。');
+  }
+  const audioSeconds = audio.length / 16000; // 要在轉移給 worker 之前先算好長度
+
+  if (signal?.aborted) throw abortError();
 
   onProgress?.({
     stage: 'downloading',
-    message: '正在準備 Whisper 語音辨識模型 (約 39MB，僅首次需下載)...',
+    message: `正在準備語音辨識模型（${MODEL_DOWNLOAD_HINT}，首次使用需下載，之後會保存在瀏覽器中）...`,
     percent: 0,
   });
 
-  let rawOutput: any = null;
+  const rawOutput = await runWhisperWorker(audio, language, onProgress, signal);
 
-  // Attempt Web Worker first
-  let workerUsed = false;
-  try {
-    if (typeof Worker !== 'undefined') {
-      rawOutput = await new Promise((resolve, reject) => {
-        const worker = new Worker(new URL('../workers/whisperWorker.ts', import.meta.url), {
-          type: 'module',
-        });
-
-        worker.onmessage = (e: MessageEvent) => {
-          const { status, data, output, error } = e.data || {};
-          if (status === 'model-progress') {
-            const pct = typeof data?.progress === 'number' ? Math.round(data.progress) : undefined;
-            const fileName = data?.file || '';
-            onProgress?.({
-              stage: 'downloading',
-              message: `下載語音模型中 ${fileName ? `(${fileName})` : ''} ${pct !== undefined ? `${pct}%` : ''}`,
-              percent: pct,
-            });
-          } else if (status === 'transcribing') {
-            onProgress?.({
-              stage: 'transcribing',
-              message: '正在使用 Whisper 辨識音檔內容 (德文)...',
-            });
-          } else if (status === 'complete') {
-            worker.terminate();
-            resolve(output);
-          } else if (status === 'error') {
-            worker.terminate();
-            reject(new Error(error || 'Whisper 辨識錯誤'));
-          }
-        };
-
-        worker.onerror = (err) => {
-          worker.terminate();
-          reject(err);
-        };
-
-        // Transfer float32Data buffer to worker
-        worker.postMessage(
-          {
-            type: 'transcribe',
-            audioData: float32Data,
-            language,
-          },
-          [float32Data.buffer]
-        );
-      });
-      workerUsed = true;
-    }
-  } catch (workerErr) {
-    console.warn('Web Worker Whisper failed or unavailable, falling back to main thread:', workerErr);
-    workerUsed = false;
-  }
-
-  // Fallback to main thread if worker didn't finish
-  if (!workerUsed || !rawOutput) {
-    onProgress?.({
-      stage: 'downloading',
-      message: '載入 Whisper 模型中...',
-    });
-    const transcriber = await getMainThreadTranscriber((data) => {
-      const pct = typeof data?.progress === 'number' ? Math.round(data.progress) : undefined;
-      onProgress?.({
-        stage: 'downloading',
-        message: `下載語音模型中 ${pct !== undefined ? `${pct}%` : ''}`,
-        percent: pct,
-      });
-    });
-
-    onProgress?.({
-      stage: 'transcribing',
-      message: '正在進行德文語音轉錄...',
-    });
-
-    rawOutput = await transcriber(float32Data, {
-      language,
-      task: 'transcribe',
-      chunk_length_s: 30,
-      stride_length_s: 5,
-      return_timestamps: true,
-    });
-  }
-
-  // Parse segments/chunks from Whisper output
+  // 把 Whisper 的輸出整理成「每一句 + 起訖秒數」
   const rawChunks = Array.isArray(rawOutput?.chunks) ? rawOutput.chunks : [];
-  const segments: TranscriptSegment[] = rawChunks.map((chunk: any, index: number) => {
-    const start = Array.isArray(chunk.timestamp) ? chunk.timestamp[0] ?? 0 : 0;
-    const end = Array.isArray(chunk.timestamp) ? chunk.timestamp[1] ?? start + 3 : start + 3;
-    return {
-      id: index + 1,
-      start: typeof start === 'number' ? start : 0,
-      end: typeof end === 'number' ? end : start + 3,
-      text: (chunk.text || '').trim(),
-    };
-  }).filter((s: TranscriptSegment) => s.text.length > 0);
+  let segments: TranscriptSegment[] = rawChunks
+    .map((chunk: any, index: number) => {
+      const start = typeof chunk.timestamp?.[0] === 'number' ? chunk.timestamp[0] : 0;
+      // Whisper 最後一句的結束時間可能是 null，這時先假設這句長 3 秒
+      const end = typeof chunk.timestamp?.[1] === 'number' ? chunk.timestamp[1] : start + 3;
+      return { id: index + 1, start, end, text: (chunk.text || '').trim() };
+    })
+    .filter((s: TranscriptSegment) => s.text.length > 0);
 
-  const fullText = (rawOutput?.text || segments.map((s: TranscriptSegment) => s.text).join(' ')).trim();
+  const fullText = (rawOutput?.text || segments.map((s) => s.text).join(' ')).trim();
+
+  // 有文字但沒有逐句時間：至少留一個涵蓋整首的段落，畫面才不會是空的
+  if (segments.length === 0 && fullText) {
+    segments = [{ id: 1, start: 0, end: audioSeconds, text: fullText }];
+  }
 
   const result: TrackTranscript = {
     trackId,
@@ -227,12 +235,6 @@ export async function transcribeAudioWithWhisper(
   };
 
   saveCachedTranscript(result);
-
-  onProgress?.({
-    stage: 'completed',
-    message: '轉錄完成！',
-    percent: 100,
-  });
-
+  onProgress?.({ stage: 'completed', message: '轉錄完成！', percent: 100 });
   return result;
 }

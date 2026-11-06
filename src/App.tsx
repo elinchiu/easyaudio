@@ -430,8 +430,9 @@ export default function App() {
         onClose={() => setIsTranscriptModalOpen(false)}
         currentTrack={player.currentTrack}
         currentTime={player.currentTime}
+        duration={player.duration}
         onSeek={player.seek}
-        accessToken={accessToken}
+        getAudioBlob={player.getCurrentAudioBlob}
       />
 
       {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}
