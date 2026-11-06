@@ -4,10 +4,11 @@ import { pipeline, env } from '@xenova/transformers';
 env.allowLocalModels = false;
 
 // 把下載好的模型存進瀏覽器的 Cache Storage，下次辨識就不必重新下載。
-// 注意：這不是離線功能。關掉的話，每次辨識都要重新下載整個模型（數百 MB）。
+// 注意：這不是離線功能。關掉的話，每次辨識都要重新下載整個模型（數十到數百 MB，依模型而定）。
 env.useBrowserCache = true;
 
 // 模型名稱與語言都由 whisper.ts 傳進來，這裡不寫死，換模型時不用改這個檔案。
+// 語言為 'auto' 或未提供時，由 Whisper 自動偵測。
 self.addEventListener('message', async (event: MessageEvent) => {
   const { type, audioData, language, model } = event.data || {};
   if (type !== 'transcribe') return;
@@ -28,7 +29,9 @@ self.addEventListener('message', async (event: MessageEvent) => {
 
     // audioData 是 16kHz 單聲道的 Float32Array
     const output = await transcriber(audioData, {
-      language,
+      // 'auto'（或沒給）時不傳 language，讓 Whisper 自己偵測；
+      // 把 'auto' 這個字串直接傳進去會報錯。
+      ...(language && language !== 'auto' ? { language } : {}),
       task: 'transcribe',
       // Whisper 一次只能處理 30 秒，長音檔要切成多段；
       // 相鄰兩段重疊 5 秒，避免句子剛好在切點被截斷。

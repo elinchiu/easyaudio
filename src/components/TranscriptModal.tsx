@@ -23,9 +23,6 @@ import {
   Layers,
 } from 'lucide-react';
 
-// 辨識語言（Whisper 使用的語言名稱）
-const LANGUAGE = 'german';
-
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -168,11 +165,12 @@ export const TranscriptModal: React.FC<Props> = ({
       if (!audioBlob) throw new Error('無法取得音檔內容，請確認檔案分享權限。');
       if (controller.signal.aborted) return;
 
+      // language 傳 undefined，使用 whisper.ts 的預設值 'auto'（自動偵測語言）
       const result = await transcribeAudioWithWhisper(
         audioBlob,
         id,
         name,
-        LANGUAGE,
+        undefined,
         (progress) => setJob((j) => (j && j.trackId === id ? { ...j, progress } : j)),
         controller.signal
       );
@@ -212,7 +210,7 @@ export const TranscriptModal: React.FC<Props> = ({
       trackName: currentTrack.name,
       fullText: segments.map((s) => s.text).join('\n'),
       segments,
-      language: transcript?.language ?? LANGUAGE,
+      language: transcript?.language ?? 'auto',
       createdAt: Date.now(),
     };
 
@@ -261,7 +259,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-slate-900 truncate">音檔文字</h3>
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#E0F8C7] text-[#36415A] border border-[#BFE0A3]">
-                  Whisper 德文語音辨識
+                  Whisper 多語言自動偵測
                 </span>
               </div>
               <p className="text-xs text-slate-500 truncate" title={currentTrack.name}>
@@ -390,7 +388,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <textarea
                 value={manualText}
                 onChange={(e) => setManualText(e.target.value)}
-                placeholder="在此貼上課本對應的德文聽力文字或對話內容..."
+                placeholder="在此貼上課本對應的聽力文字或對話內容..."
                 className="flex-1 w-full p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm text-slate-800 font-sans focus:outline-none focus:border-[#36415A] focus:bg-white resize-none leading-relaxed"
                 rows={12}
               />
@@ -423,7 +421,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <div className="space-y-1.5 max-w-md">
                 <h4 className="text-base font-bold text-slate-900">目前音檔尚未轉錄文字</h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  點擊下方按鈕，直接在瀏覽器中用 <b>Whisper 語音模型</b> 辨識此音檔的德文內容。辨識後會隨播放時間逐句高亮，點擊任一句就能跳到該處播放。
+                  點擊下方按鈕，直接在瀏覽器中用 <b>Whisper 語音模型</b> 辨識此音檔的內容，語言會自動偵測。辨識後會隨播放時間逐句高亮，點擊任一句就能跳到該處播放。
                 </p>
               </div>
 
@@ -440,7 +438,7 @@ export const TranscriptModal: React.FC<Props> = ({
                   className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-md active:scale-95 transition disabled:opacity-50"
                 >
                   <Sparkles className="w-4 h-4 text-[#E0F8C7]" />
-                  <span>瀏覽器 Whisper 德文辨識</span>
+                  <span>瀏覽器 Whisper 多語言自動偵測</span>
                 </button>
 
                 <button
@@ -535,7 +533,7 @@ export const TranscriptModal: React.FC<Props> = ({
         {/* Footer info */}
         <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
           <span>點擊任意句子或時間標記即可直接跳轉播放</span>
-          <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 德文辨識'}</span>
+          <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 多語言自動偵測'}</span>
         </div>
       </div>
     </div>

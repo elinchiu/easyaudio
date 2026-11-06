@@ -424,7 +424,7 @@ export default function App() {
         onOpenTranscript={() => setIsTranscriptModalOpen(true)}
       />
 
-      {/* 音檔文字視窗（Whisper 德文語音辨識 / 逐句對照） */}
+      {/* 音檔文字視窗（Whisper 多語言自動偵測 / 逐句對照） */}
       <TranscriptModal
         isOpen={isTranscriptModalOpen}
         onClose={() => setIsTranscriptModalOpen(false)}

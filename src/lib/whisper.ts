@@ -21,10 +21,11 @@ export interface TranscribeProgress {
 }
 
 // 使用的 Whisper 模型（量化版）。要換模型只需要改這兩行：
+//   whisper-tiny  下載量約 40MB，速度最快，但準確度較低
 //   whisper-base  下載量約 80–100MB，速度快、準確度普通
 //   whisper-small 下載量約 250–290MB，準確度明顯較好，但較慢、較吃記憶體
-const WHISPER_MODEL = 'Xenova/whisper-small';
-const MODEL_DOWNLOAD_HINT = '約 250MB';
+const WHISPER_MODEL = 'Xenova/whisper-tiny';
+const MODEL_DOWNLOAD_HINT = '約 40MB';
 
 // 下載進度只統計大於這個大小的檔案（也就是真正的模型檔），
 // 否則幾 KB 的設定檔一下載完，進度條就會先衝到 100%。
@@ -93,6 +94,7 @@ function abortError() {
 /**
  * 在 Web Worker 裡跑 Whisper。
  * 傳入 signal 可以中途取消（會直接 terminate worker）。
+ * language 為 'auto' 時，由 worker 不指定語言，讓 Whisper 自動偵測。
  */
 function runWhisperWorker(
   audio: Float32Array,
@@ -154,7 +156,13 @@ function runWhisperWorker(
           });
         }
       } else if (status === 'transcribing') {
-        onProgress?.({ stage: 'transcribing', message: '正在辨識音檔內容（德文）...' });
+        onProgress?.({
+          stage: 'transcribing',
+          message:
+            language === 'auto'
+              ? '正在辨識音檔內容（自動偵測語言）...'
+              : '正在辨識音檔內容...',
+        });
       } else if (status === 'complete') {
         finish();
         resolve(output);
@@ -180,12 +188,13 @@ function runWhisperWorker(
 
 /**
  * 在瀏覽器中用 Whisper 辨識音檔
+ * language 預設為 'auto'（自動偵測語言）；要固定語言可傳 'german'、'english' 等。
  */
 export async function transcribeAudioWithWhisper(
   audioBlob: Blob,
   trackId: string,
   trackName: string,
-  language = 'german',
+  language = 'auto',
   onProgress?: (progress: TranscribeProgress) => void,
   signal?: AbortSignal
 ): Promise<TrackTranscript> {
