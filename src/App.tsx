@@ -13,6 +13,7 @@ import { googleSignIn, initAuth } from './lib/firebase';
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { GoogleAuthModal } from './components/GoogleAuthModal';
+import { TranscriptModal } from './components/TranscriptModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 
 import { 
@@ -54,6 +55,7 @@ export default function App() {
 
   // Modals state
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
 
   // 清掉舊版本殘留在瀏覽器裡的資料夾／歌單快取（只跑一次）
@@ -419,6 +421,17 @@ export default function App() {
         onSetPointB={player.setPointB}
         onClearAB={player.clearABRepeat}
         onAuthorizeGoogle={() => handleAuthorize()}
+        onOpenTranscript={() => setIsTranscriptModalOpen(true)}
+      />
+
+      {/* 音檔文字視窗（Whisper 德文語音辨識 / 逐句對照） */}
+      <TranscriptModal
+        isOpen={isTranscriptModalOpen}
+        onClose={() => setIsTranscriptModalOpen(false)}
+        currentTrack={player.currentTrack}
+        currentTime={player.currentTime}
+        onSeek={player.seek}
+        accessToken={accessToken}
       />
 
       {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}

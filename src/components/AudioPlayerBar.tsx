@@ -13,6 +13,7 @@ import {
   ChevronUp,
   ChevronDown,
   Disc,
+  FileText,
 } from 'lucide-react';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5];
@@ -80,6 +81,7 @@ interface Props {
   onSetPointB: () => void;
   onClearAB: () => void;
   onAuthorizeGoogle?: () => void;
+  onOpenTranscript?: () => void;
 }
 
 export const AudioPlayerBar: React.FC<Props> = ({
@@ -107,6 +109,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
   onSetPointB,
   onClearAB,
   onAuthorizeGoogle,
+  onOpenTranscript,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -201,12 +204,28 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </button>
 
             <div className="min-w-0 flex-1">
-              <div
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="text-xs sm:text-sm font-bold text-slate-800 truncate cursor-pointer hover:text-indigo-600 transition-colors"
-                title={currentTrack.name}
-              >
-                {currentTrack.name}
+              <div className="flex items-center gap-2 min-w-0">
+                <div
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="text-xs sm:text-sm font-bold text-slate-800 truncate cursor-pointer hover:text-indigo-600 transition-colors"
+                  title={currentTrack.name}
+                >
+                  {currentTrack.name}
+                </div>
+                {onOpenTranscript && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenTranscript();
+                    }}
+                    className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-2xs"
+                    title="開啟音檔文字（Whisper 德文語音辨識 / 字幕）"
+                  >
+                    <FileText className="w-3 h-3 text-[#36415A]" />
+                    <span>音檔文字</span>
+                  </button>
+                )}
               </div>
               <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                 {formatTime(currentTime)} / {formatTime(duration)}
@@ -387,6 +406,19 @@ export const AudioPlayerBar: React.FC<Props> = ({
             <h2 className="mt-6 text-lg sm:text-xl font-bold text-slate-800 max-w-md break-all leading-relaxed">
               {currentTrack.name}
             </h2>
+            {onOpenTranscript && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsExpanded(false);
+                  onOpenTranscript();
+                }}
+                className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5 text-[#36415A]" />
+                <span>音檔文字</span>
+              </button>
+            )}
           </div>
 
           <div className="space-y-4 max-w-lg mx-auto w-full pb-6">
