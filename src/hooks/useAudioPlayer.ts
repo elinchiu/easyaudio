@@ -5,6 +5,11 @@ import { getTrackPlayableUrl } from '../lib/driveApi';
 // 記憶體快取：已下載成 blob 的音檔網址，避免重複下載
 const audioBlobCache = new Map<string, string>();
 
+// 預設的循環模式：一般播放（播完就停止，不自動播下一首）。
+// 這個值必須是 RepeatMode 裡代表「一般播放」的那個字串；
+// 如果你的 types/track.ts 用的不是 'off'（例如 'none' 或 'normal'），只要改這一行。
+const DEFAULT_REPEAT_MODE: RepeatMode = 'off' as RepeatMode;
+
 const setPlaybackState = (state: MediaSessionPlaybackState) => {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
 };
@@ -22,7 +27,7 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1.0);
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>('repeat-all');
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(DEFAULT_REPEAT_MODE);
   const [volume, setVolume] = useState(1.0);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
@@ -176,18 +181,18 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
   handleTrackEndRef.current = () => {
     const audio = audioRef.current;
     if (repeatMode === 'repeat-one') {
+      // 單曲循環：回到開頭重播
       if (audio) {
         audio.currentTime = 0;
         audio.play();
       }
-    } else if (
-      repeatMode === 'repeat-all' ||
-      repeatMode === 'shuffle' ||
-      currentTrackIndex < playlist.length - 1
-    ) {
+    } else if (repeatMode === 'repeat-all' || repeatMode === 'shuffle') {
+      // 只有「循環播放」與「隨機播放」才會自動接著播下一首
       nextTrack();
     } else {
-      setIsPlaying(false); // 一般模式：播完最後一首就停止
+      // 一般模式：播完就停止，不自動播下一首（不呼叫 nextTrack）
+      setIsPlaying(false);
+      setPlaybackState('paused');
     }
   };
 
