@@ -58,16 +58,25 @@ export function saveCachedTranscript(transcript: TrackTranscript): void {
 async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
   const arrayBuffer = await audioBlob.arrayBuffer();
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) {
+    throw new Error('您的瀏覽器不支援 AudioContext 音訊解碼');
+  }
   const audioCtx = new AudioContextClass();
 
   try {
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    let audioBuffer: AudioBuffer;
+    try {
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    } catch (err: any) {
+      throw new Error(`音訊解碼失敗：${err?.message || '無法解析音訊格式'}`);
+    }
+
     const targetSampleRate = 16000;
     // OfflineAudioContext 是 Web Audio 的「非即時渲染」（不經過喇叭、一次算完），
     // 在這裡只是拿來重新取樣成 16kHz 並混成單聲道，跟 App 有沒有網路無關。
     const offlineCtx = new OfflineAudioContext(
       1,
-      Math.ceil(audioBuffer.duration * targetSampleRate),
+      Math.max(1, Math.ceil(audioBuffer.duration * targetSampleRate)),
       targetSampleRate
     );
 
@@ -108,9 +117,16 @@ function runWhisperWorker(
       return;
     }
 
-    const worker = new Worker(new URL('../workers/whisperWorker.ts', import.meta.url), {
-      type: 'module',
-    });
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL('../workers/whisperWorker.ts', import.meta.url), {
+        type: 'module',
+      });
+    } catch (err: any) {
+      console.error('Failed to create Whisper worker:', err);
+      reject(new Error(`無法建立 Whisper Worker：${err?.message || String(err)}`));
+      return;
+    }
 
     const finish = () => {
       signal?.removeEventListener('abort', handleAbort);
@@ -172,17 +188,42 @@ function runWhisperWorker(
       }
     };
 
+    // Worker 腳本本身載入或執行失敗時會觸發（例如檔案 404、打包錯誤、
+    // 模組在最上層就丟出例外）。瀏覽器經常不給 message，所以把能拿到的資訊都印出來。
     worker.onerror = (e) => {
+      console.error('Whisper Worker error event:', {
+        message: e.message,
+        filename: e.filename,
+        lineno: e.lineno,
+        colno: e.colno,
+      });
       finish();
-      reject(new Error(e.message || 'Whisper Worker 載入失敗'));
+      reject(
+        new Error(
+          e.message ||
+            `Whisper Worker 載入失敗（${
+              e.filename || '找不到 Worker 檔案，請到 DevTools 的 Network 分頁檢查'
+            }${e.lineno ? `:${e.lineno}` : ''}）`
+        )
+      );
+    };
+
+    worker.onmessageerror = () => {
+      finish();
+      reject(new Error('Worker 訊息傳遞失敗'));
     };
 
     // 用「轉移」而不是「複製」把音訊交給 worker，可以省下一份記憶體
     // （轉移之後，這邊的 audio 就變成空的，不能再使用）
-    worker.postMessage(
-      { type: 'transcribe', audioData: audio, language, model: WHISPER_MODEL },
-      [audio.buffer]
-    );
+    try {
+      worker.postMessage(
+        { type: 'transcribe', audioData: audio, language, model: WHISPER_MODEL },
+        [audio.buffer]
+      );
+    } catch (err: any) {
+      finish();
+      reject(new Error(`無法傳送音訊給 Worker：${err?.message || String(err)}`));
+    }
   });
 }
 
