@@ -36,6 +36,35 @@ export class AuthRequiredError extends Error {
   }
 }
 
+/**
+ * 示範模式：網址加上 ?demo=情境 就會重現對應的錯誤畫面（給簡報／展示用，不會動到任何資料）。
+ * 讀取資料夾的情境（按「匯入」時出現）：
+ *   private（私人資料夾，會出現登入提示；登入後會正常讀取）、notfound（登入後才會出現）、apikey、referrer、service、disabled、ratelimit
+ * 播放／辨識的情境（點任一首音檔播放，或按「辨識」時出現）：
+ *   blocked（Google 擋下下載）、quota（下載流量上限）、noperm（沒有權限）、notfound-file、offline、format
+ * 例：https://elinchiu.github.io/easyaudio/?demo=blocked
+ */
+function demoScenario(): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get('demo');
+  } catch {
+    return null;
+  }
+}
+
+const fakeGoogleError = (status: number, reason: string, message: string) =>
+  new Response(JSON.stringify({ error: { code: status, message, errors: [{ reason }] } }), { status });
+
+const DEMO_FOLDER_ERRORS: Record<string, () => Response> = {
+  apikey: () => fakeGoogleError(400, 'keyInvalid', 'API key not valid. Please pass a valid API key.'),
+  referrer: () => fakeGoogleError(403, 'API_KEY_HTTP_REFERRER_BLOCKED', 'Requests from referer are blocked.'),
+  service: () => fakeGoogleError(403, 'API_KEY_SERVICE_BLOCKED', 'Requests to this API drive.googleapis.com are blocked.'),
+  disabled: () => fakeGoogleError(403, 'accessNotConfigured', 'Google Drive API has not been used in project.'),
+  ratelimit: () => fakeGoogleError(429, 'rateLimitExceeded', 'Rate Limit Exceeded'),
+};
+
+const DEMO_MEDIA_SCENARIOS = ['blocked', 'quota', 'noperm', 'notfound-file', 'offline', 'format'];
+
 /** 從完整網址或純 ID 取出資料夾 ID */
 export function extractFolderId(input: string): string {
   const text = input.trim();
@@ -194,6 +223,16 @@ export async function fetchFolderAudioTracks(
   const rootId = extractFolderId(folderId);
   let folderName = 'File Name';
 
+  // 示範模式：重現讀取資料夾時的錯誤
+  const demo = demoScenario();
+  if (demo === 'private' && !accessToken) throw new AuthRequiredError('這個資料夾不是公開的。');
+  // 已登入仍讀不到：和真實情況相同的訊息（未登入時 404 與私人資料夾無法區分，所以走上面那條）
+  if (demo === 'notfound') {
+    if (!accessToken) throw new AuthRequiredError('這個資料夾不是公開的。');
+    throw new Error('找不到此資料夾，請確認網址是否正確，以及目前登入的 Google 帳號有權限存取。');
+  }
+  if (demo && DEMO_FOLDER_ERRORS[demo]) throw await buildError(DEMO_FOLDER_ERRORS[demo](), !!accessToken);
+
   if (!accessToken && !API_KEY) {
     throw new Error('尚未設定 API Key（VITE_GOOGLE_API_KEY），無法讀取公開資料夾。');
   }
@@ -280,6 +319,12 @@ export async function getTrackPlayableUrl(
   track: AudioTrack,
   accessToken?: string | null
 ): Promise<string> {
+  // 示範模式：給一個一定播不出來的網址，讓畫面走真正的錯誤流程
+  const demo = demoScenario();
+  if (demo && DEMO_MEDIA_SCENARIOS.includes(demo)) {
+    return `${DRIVE_API}/files/demo-error?alt=media`;
+  }
+
   const isRemoteDriveFile = !track.id.startsWith('demo-') && !track.id.startsWith('local-');
 
   if (accessToken && isRemoteDriveFile) {
@@ -315,6 +360,21 @@ const MEDIA_BLOCKED_MESSAGE =
  * 探針成功代表網路、API Key、檔案權限都沒問題，是下載本身被 Google 擋下；探針也失敗就照實回報。
  */
 export async function explainMediaUrlError(url: string): Promise<string | null> {
+  // 示範模式：直接回傳該情境的真實訊息
+  const demo = demoScenario();
+  if (demo === 'blocked') return MEDIA_BLOCKED_MESSAGE;
+  if (demo === 'offline') return '無法連線到 Google Drive，請確認網路連線後再試。';
+  if (demo === 'format') return null;
+  if (demo === 'quota') {
+    return (await buildError(fakeGoogleError(403, 'downloadQuotaExceeded', 'Quota exceeded'), false, '音檔')).message;
+  }
+  if (demo === 'noperm') {
+    return (await buildError(fakeGoogleError(403, 'forbidden', 'The caller does not have permission'), false, '音檔')).message;
+  }
+  if (demo === 'notfound-file') {
+    return (await buildError(fakeGoogleError(404, 'notFound', 'File not found'), false, '音檔')).message;
+  }
+
   const controller = new AbortController();
   try {
     const res = await fetch(url, { signal: controller.signal });
