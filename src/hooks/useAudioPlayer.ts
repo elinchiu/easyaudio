@@ -15,7 +15,7 @@ const GENERIC_LOAD_ERROR = '音檔載入失敗，正在確認原因，請稍後.
 
 // Google 回應正常、卻還是播不出來時的說明（多半是暫時性問題）
 const UNKNOWN_LOAD_ERROR =
-  '感謝耐心等候，Google Drive 的回應正常，可能是網路不穩、暫時無回應，或音檔格式瀏覽器無法解碼。請重整網頁後再試。';
+  'Google Drive 有回應，但音檔還是播不出來，可能是網路不穩、暫時無回應，或音檔格式瀏覽器無法解碼。請重整網頁後再試。';
 
 /**
  * 只有「確定是權限問題」而且「還沒登入」時，才提示私人檔案可以登入 Google。
@@ -409,7 +409,11 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
       try {
         res = await fetch(playableUrl);
       } catch {
-        throw new Error('網路連線失敗，無法下載音檔，請確認網路後再試。');
+        // fetch 丟錯不一定是網路問題（Google 擋下請求時回應沒有 CORS 標頭，也會走到這裡），先查出真正原因
+        const reason = playableUrl.includes('googleapis.com')
+          ? await explainMediaUrlError(playableUrl)
+          : null;
+        throw new Error(withLoginHint(reason ?? '網路連線失敗，無法下載音檔，請確認網路後再試。', !!accessToken));
       }
 
       if (!res.ok) {

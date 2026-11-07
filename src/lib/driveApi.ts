@@ -302,9 +302,17 @@ export async function getTrackPlayableUrl(
     : track.audioUrl || getDirectAudioUrl(track.id);
 }
 
+/** Google 拒絕下載、但又讀不到錯誤內容時（瀏覽器只看到 CORS 錯誤）的說明 */
+const MEDIA_BLOCKED_MESSAGE =
+  'Google 暫時拒絕了這個音檔的下載（常見原因：Google 偵測到大量自動化請求，或這個檔案的下載流量已達上限）。請稍等一段時間，或換個網路（例如關閉 VPN、改用行動網路）後再試。';
+
 /**
  * 音檔網址播放失敗時，向 Google 查出真正的原因（<audio> 元素本身看不到錯誤內容）。
  * 回傳看得懂的中文訊息；如果網址本身其實能正常讀取（例如是音檔格式問題），回傳 null。
+ *
+ * 注意：Google 擋下請求時（例如「We're sorry… automated queries」頁面）回應不帶 CORS 標頭，
+ * fetch 會直接丟錯、讀不到狀態碼。這時改用「只查檔案資訊」的請求當探針（它有 CORS）：
+ * 探針成功代表網路、API Key、檔案權限都沒問題，是下載本身被 Google 擋下；探針也失敗就照實回報。
  */
 export async function explainMediaUrlError(url: string): Promise<string | null> {
   const controller = new AbortController();
@@ -316,6 +324,25 @@ export async function explainMediaUrlError(url: string): Promise<string | null> 
     }
     return (await buildError(res, false, '音檔')).message;
   } catch {
+    // 讀不到回應內容（CORS 被擋或連線失敗），往下用探針確認
+  }
+
+  let probeUrl: string;
+  try {
+    const u = new URL(url);
+    u.searchParams.delete('alt');
+    u.searchParams.set('fields', 'id,name');
+    u.searchParams.set('supportsAllDrives', 'true');
+    probeUrl = u.toString();
+  } catch {
     return null;
+  }
+
+  try {
+    const probe = await fetch(probeUrl);
+    if (probe.ok) return MEDIA_BLOCKED_MESSAGE;
+    return (await buildError(probe, false, '音檔')).message;
+  } catch {
+    return '無法連線到 Google Drive，請確認網路連線後再試。';
   }
 }
