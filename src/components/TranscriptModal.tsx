@@ -18,7 +18,6 @@ import {
   Search,
   Sparkles,
   Layers,
-  Languages,
 } from 'lucide-react';
 
 interface Props {
@@ -34,40 +33,11 @@ interface Props {
 }
 
 /**
- * 可選的音檔語言。value 必須是 Whisper 認得的語言名稱（英文小寫），
- * 'auto' 例外：代表不指定語言，讓 Whisper 自動偵測。
- * 要增減語言只需要改這個清單。
+ * 辨識語言：目前主要處理德語音檔，固定使用德文。
+ * 值必須是 Whisper 認得的語言名稱（英文小寫）。
+ * 要改成自動偵測，把它改成 'auto' 即可。
  */
-const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'auto', label: '自動偵測' },
-  { value: 'german', label: '德文' },
-  { value: 'english', label: '英文' },
-  { value: 'japanese', label: '日文' },
-  { value: 'korean', label: '韓文' },
-  { value: 'chinese', label: '中文' },
-  { value: 'french', label: '法文' },
-  { value: 'spanish', label: '西班牙文' },
-  { value: 'italian', label: '義大利文' },
-  { value: 'portuguese', label: '葡萄牙文' },
-  { value: 'russian', label: '俄文' },
-];
-
-const LANGUAGE_STORAGE_KEY = 'ea_whisper_language';
-
-function getLanguageLabel(value: string | undefined): string {
-  return LANGUAGE_OPTIONS.find((o) => o.value === value)?.label ?? value ?? '自動偵測';
-}
-
-/** 讀取上次選的語言；沒有或不合法時回到「自動偵測」 */
-function readSavedLanguage(): string {
-  try {
-    const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-    if (saved && LANGUAGE_OPTIONS.some((o) => o.value === saved)) return saved;
-  } catch (e) {
-    console.warn('Failed to read saved language:', e);
-  }
-  return 'auto';
-}
+const TRANSCRIBE_LANGUAGE = 'german';
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -90,9 +60,6 @@ export const TranscriptModal: React.FC<Props> = ({
   // 正在進行的辨識工作。同一時間只允許一個，並記下它是哪一首的
   const [job, setJob] = useState<{ trackId: string; progress: TranscribeProgress | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // 使用者選的音檔語言（會記住上次的選擇）
-  const [language, setLanguage] = useState<string>(readSavedLanguage);
 
   // 顯示模式：'synced' 逐句對照 / 'text' 純文字
   const [viewMode, setViewMode] = useState<'synced' | 'text'>('synced');
@@ -152,15 +119,6 @@ export const TranscriptModal: React.FC<Props> = ({
   const isTranscribing = job?.trackId === currentTrack.id;
   const isBusyWithOtherTrack = !!job && job.trackId !== currentTrack.id;
 
-  const handleLanguageChange = (value: string) => {
-    setLanguage(value);
-    try {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, value);
-    } catch (e) {
-      console.warn('Failed to save language:', e);
-    }
-  };
-
   const handleStartTranscribe = async () => {
     if (job) return;
     if (transcript && !window.confirm('重新辨識會覆蓋目前的文字，確定要繼續嗎？')) {
@@ -179,12 +137,12 @@ export const TranscriptModal: React.FC<Props> = ({
       if (!audioBlob) throw new Error('無法取得音檔內容，請確認檔案分享權限。');
       if (controller.signal.aborted) return;
 
-      // language 是使用者選的語言；'auto' 代表讓 Whisper 自動偵測
+      // 固定用德文辨識
       const result = await transcribeAudioWithWhisper(
         audioBlob,
         id,
         name,
-        language,
+        TRANSCRIBE_LANGUAGE,
         (progress) => setJob((j) => (j && j.trackId === id ? { ...j, progress } : j)),
         controller.signal
       );
@@ -232,26 +190,6 @@ export const TranscriptModal: React.FC<Props> = ({
     return seg.text.toLowerCase().includes(searchQuery.trim().toLowerCase());
   });
 
-  // 語言下拉選單（空狀態與已有文字時共用）
-  const languageSelector = (
-    <label className="flex items-center gap-2 text-xs text-slate-600">
-      <Languages className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-      <span className="shrink-0">音檔語言</span>
-      <select
-        value={language}
-        onChange={(e) => handleLanguageChange(e.target.value)}
-        disabled={!!job}
-        className="rounded-xl bg-slate-50 border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-[#36415A] disabled:opacity-50"
-      >
-        {LANGUAGE_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-3 sm:p-4">
       <div className="w-full max-w-2xl h-[88vh] max-h-[750px] rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col text-slate-800 overflow-hidden">
@@ -265,7 +203,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-slate-900 truncate">音檔文字</h3>
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#E0F8C7] text-[#36415A] border border-[#BFE0A3]">
-                  Whisper 語音辨識
+                  Whisper 德文語音辨識
                 </span>
               </div>
               <p className="text-xs text-slate-500 truncate" title={currentTrack.name}>
@@ -306,7 +244,7 @@ export const TranscriptModal: React.FC<Props> = ({
                   onClick={handleStartTranscribe}
                   disabled={!!job}
                   className="p-1.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition disabled:opacity-50"
-                  title="用目前選的語言重新辨識"
+                  title="重新辨識"
                 >
                   <RotateCcw className="w-4 h-4" />
                 </button>
@@ -384,7 +322,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <div className="space-y-1.5 max-w-md">
                 <h4 className="text-base font-bold text-slate-900">目前音檔尚未轉錄文字</h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  先選擇音檔的語言，再點擊下方按鈕開始辨識。辨識完成後，點擊任一句就能跳到該處播放。
+                  點擊下方按鈕，以德文辨識此音檔的內容。辨識完成後，點擊任一句就能跳到該處播放。
                 </p>
               </div>
 
@@ -395,8 +333,6 @@ export const TranscriptModal: React.FC<Props> = ({
               )}
 
               <div className="pt-3 flex flex-col items-center gap-3 w-full max-w-sm">
-                {languageSelector}
-
                 <button
                   onClick={handleStartTranscribe}
                   disabled={isBusyWithOtherTrack}
@@ -408,7 +344,7 @@ export const TranscriptModal: React.FC<Props> = ({
               </div>
 
               <div className="pt-3 text-[11px] text-slate-400">
-                • 不確定語言時請選「自動偵測」；知道語言時，直接指定通常比較準。辨識結果可能有錯字。首次使用需要下載語音辨識模型，建議在 Wi-Fi 下進行。
+                • 辨識結果可能有錯字。首次使用需要下載語音辨識模型，建議在 Wi-Fi 下進行。
               </div>
             </div>
           )}
@@ -416,14 +352,6 @@ export const TranscriptModal: React.FC<Props> = ({
           {/* Transcript Display */}
           {!isTranscribing && transcript && (
             <div className="space-y-4">
-              {/* 語言選擇：改選之後按右上角的重新辨識圖示即可重跑 */}
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-                {languageSelector}
-                <span className="text-[11px] text-slate-400">
-                  目前文字的語言：{getLanguageLabel(transcript.language)}。換語言後，請按右上角的重新辨識。
-                </span>
-              </div>
-
               {/* Search Bar within Transcript */}
               <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
                 <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -498,7 +426,7 @@ export const TranscriptModal: React.FC<Props> = ({
         {/* Footer info */}
         <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
           <span>點擊任意句子或時間標記即可直接跳轉播放</span>
-          <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 語音辨識'}</span>
+          <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 德文語音辨識'}</span>
         </div>
       </div>
     </div>
