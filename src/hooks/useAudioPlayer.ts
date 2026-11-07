@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AudioTrack, RepeatMode, ABRepeat } from '../types/track';
-import { getTrackPlayableUrl } from '../lib/driveApi';
+import { getTrackPlayableUrl, explainMediaUrlError } from '../lib/driveApi';
 
 // 記憶體快取：已下載成 blob 的音檔網址，避免重複下載
 const audioBlobCache = new Map<string, string>();
@@ -9,6 +9,9 @@ const audioBlobCache = new Map<string, string>();
 // 這個值必須是 RepeatMode 裡代表「一般播放」的那個字串；
 // 如果你的 types/track.ts 用的不是 'off'（例如 'none' 或 'normal'），只要改這一行。
 const DEFAULT_REPEAT_MODE: RepeatMode = 'off' as RepeatMode;
+
+const GENERIC_LOAD_ERROR =
+  '音檔載入失敗。請確認檔案已設為「知道連結的任何人」可檢視，且網站的 API Key 設定正確。若是私人檔案，請登入 Google 後再播放。';
 
 const setPlaybackState = (state: MediaSessionPlaybackState) => {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
@@ -49,6 +52,13 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     const onTimeUpdate = () => {
       setCurrentTime(audio.currentTime);
 
+      // 長度被低估：沒有長度標頭的 MP3，瀏覽器一開始只能用檔案大小估算長度，常常偏短。
+      // 播放位置已經超過 duration 時，把總長度往後延，畫面才不會出現「播放秒數 > 總秒數」。
+      // 真正的長度出來時（durationchange）會再修正成正確的值。
+      if (Number.isFinite(audio.duration) && audio.currentTime > audio.duration) {
+        setDuration(audio.currentTime);
+      }
+
       // A-B 循環：播到 B 點就跳回 A 點
       const { enabled, pointA, pointB } = abRepeatRef.current;
       if (enabled && pointA !== null && pointB !== null && audio.currentTime >= pointB) {
@@ -60,23 +70,35 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
       setIsLoadingAudio(false);
       setAudioError(null);
     };
+    // 瀏覽器分析完整個檔案、算出更準確的長度時會觸發（只聽 loadedmetadata 會一直停在最初的估算值）
+    const onDurationChange = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) setDuration(audio.duration);
+    };
     const onEnded = () => handleTrackEndRef.current();
     const onError = () => {
       setIsLoadingAudio(false);
       setIsPlaying(false);
-      setAudioError(
-        '音檔載入失敗。請確認檔案已設為「知道連結的任何人」可檢視，且網站的 API Key 設定正確。若是私人檔案，請登入 Google 後再播放。'
-      );
+      setAudioError(GENERIC_LOAD_ERROR);
+
+      // <audio> 看不到失敗的原因，所以向 Google 查一次，把真正的原因（例如 403 / 流量上限）顯示出來
+      const src = audio.src;
+      if (src.includes('googleapis.com')) {
+        explainMediaUrlError(src).then((message) => {
+          if (message && audio.src === src) setAudioError(message);
+        });
+      }
     };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('durationchange', onDurationChange);
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
 
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.removeEventListener('durationchange', onDurationChange);
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
       audio.pause();
@@ -102,7 +124,7 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
       try {
         // 1. 記憶體快取有就直接用
         // 2. 否則由 driveApi 決定：已登入用 Bearer token 下載（可播私人檔案），
-        //    未登入直接用 Drive API + API Key 的公開串流網址
+        //    未登入（或 token 已過期）直接用 Drive API + API Key 的公開串流網址
         let url = audioBlobCache.get(track.id);
         if (!url) {
           url = await getTrackPlayableUrl(track, accessToken);
@@ -269,7 +291,6 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
   }, [togglePlay, prevTrack, nextTrack, skip, seek]);
 
   // 取得「指定音檔」的 Blob（不一定是正在播放的那首），供語音辨識使用。
-  // 批次辨識整個資料夾時，會對清單裡的每一首呼叫這個函式。
   const getTrackAudioBlob = useCallback(
     async (track: AudioTrack): Promise<Blob | null> => {
       try {
@@ -297,12 +318,6 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     },
     [accessToken]
   );
-
-  // 取得目前播放中音檔的 Blob（保留給舊的呼叫方式使用）
-  const getCurrentAudioBlob = useCallback(async (): Promise<Blob | null> => {
-    if (!currentTrack) return null;
-    return getTrackAudioBlob(currentTrack);
-  }, [currentTrack, getTrackAudioBlob]);
 
   return {
     currentTrack,
@@ -332,7 +347,6 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     setPointA,
     setPointB,
     clearABRepeat,
-    getCurrentAudioBlob,
     getTrackAudioBlob,
   };
 }

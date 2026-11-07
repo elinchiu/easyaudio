@@ -8,7 +8,7 @@ import { AudioTrack } from './types/track';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { useTranscriptionQueue } from './hooks/useTranscriptionQueue';
 import { fetchFolderAudioTracks, extractFolderId } from './lib/driveApi';
-import { googleSignIn, initAuth } from './lib/firebase';
+import { googleSignIn, initAuth, getAccessTokenExpiresAt } from './lib/firebase';
 
 // Components
 import { TrackListView } from './components/TrackListView';
@@ -171,13 +171,26 @@ export default function App() {
     });
   }, [player.duration, player.currentTrack?.id]);
 
-  // Listen to auth
+  // Listen to auth：重新整理後，如果上次登入的 token 還沒過期，會直接沿用（不用重新登入）
   useEffect(() => {
     const unsub = initAuth((user, token) => {
       setAccessToken(token);
     });
     return () => unsub();
   }, []);
+
+  // Google 的 token 約 1 小時過期：時間到就當作登出。
+  // 公開資料夾不受影響（改用 API Key 讀取），私人資料夾再按一次「登入 Google」即可。
+  useEffect(() => {
+    if (!accessToken) return;
+    const msLeft = getAccessTokenExpiresAt() - Date.now();
+    if (msLeft <= 0) {
+      setAccessToken(null);
+      return;
+    }
+    const timer = setTimeout(() => setAccessToken(null), msLeft);
+    return () => clearTimeout(timer);
+  }, [accessToken]);
 
   // Sync playlist with tracks
   useEffect(() => {

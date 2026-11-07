@@ -42,23 +42,40 @@ function getPublicMediaUrl(fileId: string): string {
     : getDirectAudioUrl(fileId);
 }
 
-/** 呼叫 Drive API：有 token 用 token，沒有就帶 API Key */
-function driveGet(
+/**
+ * 呼叫 Drive API：有 token 用 token，沒有就帶 API Key。
+ * token 過期或被撤銷（401）時，如果有 API Key 就自動改用公開方式再試一次，
+ * 所以公開資料夾不會因為過期的登入而讀取失敗。
+ */
+async function driveGet(
   path: string,
   params: Record<string, string>,
   accessToken?: string | null
 ): Promise<Response> {
-  const search = new URLSearchParams(params);
-  const headers: Record<string, string> = {};
+  const withKey = () => {
+    const search = new URLSearchParams(params);
+    if (API_KEY) search.set('key', API_KEY);
+    return fetch(`${DRIVE_API}${path}?${search}`);
+  };
 
-  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-  else if (API_KEY) search.set('key', API_KEY);
+  if (!accessToken) return withKey();
 
-  return fetch(`${DRIVE_API}${path}?${search}`, { headers });
+  const res = await fetch(`${DRIVE_API}${path}?${new URLSearchParams(params)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 401 && API_KEY) return withKey();
+  return res;
 }
 
-/** 把 Drive API 的錯誤回應轉成看得懂的中文訊息 */
-async function buildError(response: Response, hasToken: boolean): Promise<Error> {
+/**
+ * 把 Drive API 的錯誤回應轉成看得懂的中文訊息。
+ * subject 是出錯的對象（讀取資料夾時是「資料夾」，播放時是「音檔」）。
+ */
+async function buildError(
+  response: Response,
+  hasToken: boolean,
+  subject = '資料夾'
+): Promise<Error> {
   const { status } = response;
   let reason = '';
   let message = '';
@@ -98,21 +115,24 @@ async function buildError(response: Response, hasToken: boolean): Promise<Error>
   if (is('rateLimitExceeded', 'userRateLimitExceeded') || status === 429) {
     return new Error('Google Drive 請求過於頻繁，請稍後再試。');
   }
+  if (is('downloadQuotaExceeded')) {
+    return new Error(`這個${subject}的下載流量已達 Google 的上限，請稍後再試。${raw}`);
+  }
   if (status === 404 || is('notFound')) {
     return new Error(
       hasToken
-        ? '找不到此資料夾，請確認網址是否正確。'
-        : '找不到此資料夾。請確認網址正確，且資料夾分享設定為「知道連結的任何人 → 檢視者」。'
+        ? `找不到此${subject}，請確認網址是否正確。`
+        : `找不到此${subject}。請確認網址正確，且${subject}分享設定為「知道連結的任何人 → 檢視者」。`
     );
   }
   if (status === 401 || status === 403) {
     return new Error(
       hasToken
-        ? '沒有權限存取此資料夾。'
-        : '無法讀取此資料夾。請確認資料夾分享設定為「知道連結的任何人 → 檢視者」。'
+        ? `沒有權限存取此${subject}。${raw}`
+        : `無法讀取此${subject}。請確認${subject}分享設定為「知道連結的任何人 → 檢視者」。${raw}`
     );
   }
-  return new Error(`無法讀取資料夾 (代碼 ${status})${message ? `：${message}` : ''}`);
+  return new Error(`無法讀取${subject} (代碼 ${status})${message ? `：${message}` : ''}`);
 }
 
 /** 列出單一資料夾內所有項目（自動翻頁） */
@@ -229,7 +249,7 @@ export async function fetchFolderAudioTracks(
 
 /**
  * 取得可播放的網址。
- * - 已登入：用 Bearer token 下載成 blob（可播放私人檔案）
+ * - 已登入：用 Bearer token 下載成 blob（可播放私人檔案）；token 過期或失敗就改用公開網址
  * - 未登入：直接使用 Drive API + API Key 的串流網址（公開檔案）
  */
 export async function getTrackPlayableUrl(
@@ -256,4 +276,22 @@ export async function getTrackPlayableUrl(
   return isRemoteDriveFile
     ? getPublicMediaUrl(track.id)
     : track.audioUrl || getDirectAudioUrl(track.id);
+}
+
+/**
+ * 音檔網址播放失敗時，向 Google 查出真正的原因（<audio> 元素本身看不到錯誤內容）。
+ * 回傳看得懂的中文訊息；如果網址本身其實能正常讀取（例如是音檔格式問題），回傳 null。
+ */
+export async function explainMediaUrlError(url: string): Promise<string | null> {
+  const controller = new AbortController();
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (res.ok) {
+      controller.abort(); // 網址可以讀，不需要真的把整個音檔下載下來
+      return null;
+    }
+    return (await buildError(res, false, '音檔')).message;
+  } catch {
+    return null;
+  }
 }
