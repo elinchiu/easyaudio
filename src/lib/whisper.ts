@@ -227,15 +227,137 @@ function runWhisperWorker(
   });
 }
 
+// ───────────────────────── 斷句 ─────────────────────────
+// Whisper 回傳的「段落」是依 30 秒視窗與它自己的判斷切的，不一定剛好是一句話：
+// 常見狀況是一段裡有好幾句，或一句話被切在兩段之間。
+// 所以這裡先把所有段落接成一整段文字，再依標點重新切成「一句一行」，
+// 每句的起訖時間，用它在原本段落裡的字元位置按比例推算。
+
+// 德文常見縮寫：句點接在這些詞後面時，不算句子結束
+const NON_BREAKING_ABBREVIATIONS = new Set([
+  'z.b', 'd.h', 'u.a', 'z.t', 'u.ä', 'o.ä', 'v.a', 'z.zt',
+  'usw', 'bzw', 'ca', 'vgl', 'nr', 'dr', 'prof', 'hr', 'fr',
+  'str', 'tel', 'evtl', 'ggf', 'inkl', 'sog', 'etc', 'bsp', 'abb',
+]);
+
+const SENTENCE_END_CHARS = '.!?…';
+const CLOSING_CHARS = '"\'”“»«)]';
+
+/** 判斷位置 i 的句點是不是真的句尾（排除序數「3. Mai」與縮寫「z.B.」） */
+function isRealSentenceEndPeriod(text: string, i: number): boolean {
+  const tokenStart = text.lastIndexOf(' ', i) + 1;
+  const token = text
+    .slice(tokenStart, i)
+    .replace(/^[„"“«(\[]+/, '')
+    .toLowerCase();
+  if (/^\d{1,2}$/.test(token)) return false; // 序數，例如「am 3. Mai」（4 位數的年份結尾仍會斷句）
+  if (NON_BREAKING_ABBREVIATIONS.has(token)) return false;
+  return true;
+}
+
+/** 依標點把文字切成句子，回傳每句的字元範圍（已去掉前後空白） */
+function splitIntoSentenceSpans(text: string): { start: number; end: number }[] {
+  const raw: { start: number; end: number }[] = [];
+  let sentenceStart = 0;
+  let i = 0;
+
+  while (i < text.length) {
+    if (!SENTENCE_END_CHARS.includes(text[i])) {
+      i++;
+      continue;
+    }
+
+    // 吃掉連續的結束標點（?!、...）與緊接的結尾引號
+    let j = i + 1;
+    while (j < text.length && (SENTENCE_END_CHARS.includes(text[j]) || CLOSING_CHARS.includes(text[j]))) {
+      j++;
+    }
+
+    // 標點後面必須是空白或結尾，才算句尾（避免切到 8.30、z.B）
+    const atBoundary = j >= text.length || /\s/.test(text[j]);
+    if (atBoundary && (text[i] !== '.' || j - i > 1 || isRealSentenceEndPeriod(text, i))) {
+      raw.push({ start: sentenceStart, end: j });
+      sentenceStart = j;
+    }
+    i = j;
+  }
+  if (sentenceStart < text.length) raw.push({ start: sentenceStart, end: text.length });
+
+  const spans: { start: number; end: number }[] = [];
+  for (const r of raw) {
+    let { start, end } = r;
+    while (start < end && /\s/.test(text[start])) start++;
+    while (end > start && /\s/.test(text[end - 1])) end--;
+    if (end > start) spans.push({ start, end });
+  }
+  return spans;
+}
+
+/** 把 Whisper 的段落重新整理成「一句一行 + 起訖秒數」 */
+function buildSentenceSegments(rawChunks: any[], audioSeconds: number): TranscriptSegment[] {
+  // 1. 整理每個段落的時間
+  const chunks: { text: string; start: number; end: number }[] = [];
+  for (const c of rawChunks) {
+    const text = (c?.text || '').trim();
+    if (!text) continue;
+    const prevEnd = chunks.length ? chunks[chunks.length - 1].end : 0;
+    const start = typeof c.timestamp?.[0] === 'number' ? c.timestamp[0] : prevEnd;
+    // Whisper 最後一句的結束時間可能是 null，這時先假設這句長 3 秒
+    const end = typeof c.timestamp?.[1] === 'number' ? c.timestamp[1] : start + 3;
+    chunks.push({ text, start, end: Math.max(end, start + 0.1) });
+  }
+  if (chunks.length === 0) return [];
+
+  // 2. 把所有段落接成一整段文字，並記下每段在文字中的位置
+  let combined = '';
+  const spans: { charStart: number; charEnd: number; start: number; end: number }[] = [];
+  for (const c of chunks) {
+    if (combined) combined += ' ';
+    spans.push({
+      charStart: combined.length,
+      charEnd: combined.length + c.text.length,
+      start: c.start,
+      end: c.end,
+    });
+    combined += c.text;
+  }
+
+  // 3. 字元位置 → 秒數（在所屬段落的起訖時間之間按比例推算）
+  const timeAt = (pos: number): number => {
+    for (const s of spans) {
+      if (pos <= s.charEnd) {
+        const p = Math.max(pos, s.charStart);
+        const ratio = (p - s.charStart) / Math.max(1, s.charEnd - s.charStart);
+        return s.start + ratio * (s.end - s.start);
+      }
+    }
+    return spans[spans.length - 1].end;
+  };
+
+  // 4. 切句，並確保時間由小到大、不超過音檔長度
+  const limit = audioSeconds > 0 ? audioSeconds : Infinity;
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const segments: TranscriptSegment[] = [];
+
+  for (const { start: cs, end: ce } of splitIntoSentenceSpans(combined)) {
+    const prevStart = segments.length ? segments[segments.length - 1].start : 0;
+    const start = Math.min(Math.max(timeAt(cs), prevStart), limit);
+    const end = Math.min(Math.max(timeAt(ce), start), limit);
+    segments.push({ id: segments.length + 1, start: round(start), end: round(end), text: combined.slice(cs, ce) });
+  }
+  return segments;
+}
+
 /**
  * 在瀏覽器中用 Whisper 辨識音檔
- * language 預設為 'auto'（自動偵測語言）；要固定語言可傳 'german'、'english' 等。
+ * language 預設為 'german'（本 App 專門處理德語音檔）；
+ * 要自動偵測可傳 'auto'，其他語言可傳 'english' 等。
  */
 export async function transcribeAudioWithWhisper(
   audioBlob: Blob,
   trackId: string,
   trackName: string,
-  language = 'auto',
+  language = 'german',
   onProgress?: (progress: TranscribeProgress) => void,
   signal?: AbortSignal
 ): Promise<TrackTranscript> {
@@ -257,23 +379,18 @@ export async function transcribeAudioWithWhisper(
 
   const rawOutput = await runWhisperWorker(audio, language, onProgress, signal);
 
-  // 把 Whisper 的輸出整理成「每一句 + 起訖秒數」
+  // 把 Whisper 的輸出重新斷句成「一句一行 + 起訖秒數」
   const rawChunks = Array.isArray(rawOutput?.chunks) ? rawOutput.chunks : [];
-  let segments: TranscriptSegment[] = rawChunks
-    .map((chunk: any, index: number) => {
-      const start = typeof chunk.timestamp?.[0] === 'number' ? chunk.timestamp[0] : 0;
-      // Whisper 最後一句的結束時間可能是 null，這時先假設這句長 3 秒
-      const end = typeof chunk.timestamp?.[1] === 'number' ? chunk.timestamp[1] : start + 3;
-      return { id: index + 1, start, end, text: (chunk.text || '').trim() };
-    })
-    .filter((s: TranscriptSegment) => s.text.length > 0);
+  let segments = buildSentenceSegments(rawChunks, audioSeconds);
 
-  const fullText = (rawOutput?.text || segments.map((s) => s.text).join(' ')).trim();
-
-  // 有文字但沒有逐句時間：至少留一個涵蓋整首的段落，畫面才不會是空的
-  if (segments.length === 0 && fullText) {
-    segments = [{ id: 1, start: 0, end: audioSeconds, text: fullText }];
+  // 沒有逐段時間、只有整段文字：把它當成涵蓋整首的一段，再依標點切句、按字數分配時間
+  const rawText = (rawOutput?.text || '').trim();
+  if (segments.length === 0 && rawText) {
+    segments = buildSentenceSegments([{ text: rawText, timestamp: [0, audioSeconds] }], audioSeconds);
   }
+
+  // 純文字檢視、複製、下載 .txt 都用這個：一句一行
+  const fullText = segments.map((s) => s.text).join('\n');
 
   const result: TrackTranscript = {
     trackId,

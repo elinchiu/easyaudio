@@ -203,7 +203,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-slate-900 truncate">音檔文字</h3>
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#E0F8C7] text-[#36415A] border border-[#BFE0A3]">
-                  Whisper 德文語音辨識
+                  Whisper 語音辨識
                 </span>
               </div>
               <p className="text-xs text-slate-500 truncate" title={currentTrack.name}>
@@ -322,7 +322,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <div className="space-y-1.5 max-w-md">
                 <h4 className="text-base font-bold text-slate-900">目前音檔尚未轉錄文字</h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  點擊下方按鈕，以德文辨識此音檔的內容。辨識完成後，點擊任一句就能跳到該處播放。
+                  點擊下方按鈕辨識此音檔的內容。辨識完成後，點擊任一句就能跳到該處播放。
                 </p>
               </div>
 
@@ -426,7 +426,7 @@ export const TranscriptModal: React.FC<Props> = ({
         {/* Footer info */}
         <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
           <span>點擊任意句子或時間標記即可直接跳轉播放</span>
-          <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 德文語音辨識'}</span>
+          <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 語音辨識'}</span>
         </div>
       </div>
     </div>
