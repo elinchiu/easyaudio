@@ -439,7 +439,7 @@ export default function App() {
         {/* 貼上資料夾連結 + 匯入 */}
         <form
           onSubmit={handleImport}
-          className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex items-center gap-2.5"
+          className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-2.5"
         >
           <div className="flex-1 min-w-0 flex items-center gap-2.5 bg-[#E0F8C7] rounded-xl px-3.5 py-2.5">
             <Link2 className="w-4 h-4 text-slate-500 shrink-0" />
@@ -463,6 +463,11 @@ export default function App() {
             )}
             <span>{isLoadingFolder ? '匯入中...' : '匯入'}</span>
           </button>
+
+          {/* 使用提示：放在貼連結的欄位旁邊，讓使用者一進來就看到 */}
+          <p className="basis-full px-1 text-xs text-slate-500 leading-relaxed">
+            請確認資料夾已設為「知道連結的任何人」可檢視，再貼上連結並按「匯入」。若是非公開資料夾，可登入 Google 後讀取。
+          </p>
         </form>
 
         {/* Drive Folder Status Banner */}
@@ -509,8 +514,8 @@ export default function App() {
               <div className="pt-1 flex items-center justify-between gap-3">
                 <span className="text-amber-800/80">
                   {isPrivateFolder
-                    ? '若是私人資料夾，需登入 Google 後才能讀取'
-                    : '若是私人資料夾，需登入 Google 後才能讀取'}
+                    ? '若是私人資料夾，請登入 Google 後再匯入，你貼的連結會保留在欄位裡。'
+                    : '如果這是私人資料夾，可以登入 Google 後再讀取。'}
                 </span>
                 <button
                   onClick={handleLoginAndLoad}
@@ -531,8 +536,6 @@ export default function App() {
           isPlaying={player.isPlaying}
           onPlayTrack={handleTrackClick}
           onTogglePlay={player.togglePlay}
-          onAuthorize={() => handleAuthorize()}
-          hasAccessToken={!!accessToken}
         />
       </main>
 

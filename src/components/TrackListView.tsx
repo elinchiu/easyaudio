@@ -10,8 +10,6 @@ interface Props {
   isPlaying: boolean;
   onPlayTrack: (track: AudioTrack) => void;
   onTogglePlay: () => void;
-  onAuthorize?: () => void;
-  hasAccessToken?: boolean;
 }
 
 // 秒數轉 mm:ss，未知時顯示 --:--
@@ -30,8 +28,6 @@ export const TrackListView: React.FC<Props> = ({
   isPlaying,
   onPlayTrack,
   onTogglePlay,
-  onAuthorize,
-  hasAccessToken,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const hasTracks = tracks.length > 0;
@@ -85,21 +81,13 @@ export const TrackListView: React.FC<Props> = ({
             <h4 className="text-base font-bold text-slate-800">
               {hasTracks ? '找不到符合條件的音檔' : '尚未載入音檔'}
             </h4>
-            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-              {hasTracks
-                ? `沒有包含「${searchQuery}」的檔案`
-                : '請確認資料夾已設為「知道連結的任何人」可檢視，然後在上方貼上資料夾連結並按「匯入」，或按「重新整理」。若是非公開資料夾，可以登入 Google 後讀取。'}
-            </p>
+            {/* 還沒載入音檔時的使用說明，已移到上方貼連結的欄位旁邊 */}
+            {hasTracks && (
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+                {`沒有包含「${searchQuery}」的檔案`}
+              </p>
+            )}
           </div>
-
-          {!hasTracks && onAuthorize && !hasAccessToken && (
-            <button
-              onClick={onAuthorize}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition"
-            >
-              登入 Google
-            </button>
-          )}
 
           {hasTracks && (
             <button
