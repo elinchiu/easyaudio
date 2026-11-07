@@ -226,6 +226,26 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     }
   }, []);
 
+  // 跳到指定秒數並直接播放（暫停中也會自動開始播）
+  // 給文字面板用：點哪一句就從那一句開始播
+  const seekAndPlay = useCallback((time: number) => {
+    const audio = audioRef.current;
+    if (!audio?.src) return;
+
+    audio.currentTime = time;
+    setCurrentTime(time);
+
+    if (audio.paused) {
+      audio
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+          setPlaybackState('playing');
+        })
+        .catch((err) => console.warn('Play after seek failed:', err));
+    }
+  }, []);
+
   // 相對跳轉（正數快轉、負數倒退）
   const skip = useCallback(
     (deltaSeconds: number) => {
@@ -339,6 +359,7 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     nextTrack,
     prevTrack,
     seek,
+    seekAndPlay,
     skip,
     changePlaybackRate,
     setRepeatMode,

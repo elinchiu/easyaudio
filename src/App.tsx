@@ -274,7 +274,7 @@ export default function App() {
   };
 
   // Keyboard Shortcuts:
-  // Space (播放/暫停)、←/→ (±3 秒)、Shift+N (下一個音檔)、Shift+P (上一個音檔)
+  // Space (播放/暫停)、←/→ (±3 秒)、Shift+N (下一個音檔)、Shift+P (上一個音檔)、S (文字面板)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in an input or textarea
@@ -306,6 +306,11 @@ export default function App() {
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
         player.skip(3);
+      } else if (e.code === 'KeyS' && !e.shiftKey && !e.repeat) {
+        // S：開啟／關閉文字面板（沒有選歌時不動作）
+        if (!player.currentTrack) return;
+        e.preventDefault();
+        setIsTranscriptModalOpen((open) => !open);
       }
     };
 
@@ -339,7 +344,7 @@ export default function App() {
                 Easy Audio - 播放音檔不卡卡
               </h1>
               <p className="text-[11px] text-slate-500 hidden sm:block">
-                讀取 Google Drive 資料夾 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首
+                讀取 Google Drive 資料夾 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首 · S鍵 開啟/關閉文檔視窗
               </p>
             </div>
           </div>
@@ -504,7 +509,7 @@ export default function App() {
         onClose={() => setIsTranscriptModalOpen(false)}
         currentTrack={player.currentTrack}
         currentTime={player.currentTime}
-        onSeek={player.seek}
+        onSeek={player.seekAndPlay}
         queue={queue}
         width={transcriptWidth}
         onWidthChange={setTranscriptWidth}
