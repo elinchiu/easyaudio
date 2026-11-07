@@ -25,6 +25,17 @@ export interface FolderFetchResult {
   tracks: AudioTrack[];
 }
 
+/**
+ * 資料夾不是公開的（用 API Key 讀不到），需要使用者登入 Google 才能讀取。
+ * 呼叫端用 error.name === 'AuthRequiredError' 判斷，然後跳出登入視窗。
+ */
+export class AuthRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthRequiredError';
+  }
+}
+
 /** 從完整網址或純 ID 取出資料夾 ID */
 export function extractFolderId(input: string): string {
   const text = input.trim();
@@ -174,6 +185,7 @@ function isAudioFile(file: DriveFile): boolean {
 /**
  * 讀取資料夾（含子資料夾）內所有音檔。
  * 公開資料夾：不需要 accessToken，只要有 API Key 即可。
+ * 私人資料夾且沒有登入：丟出 AuthRequiredError，讓畫面請使用者登入 Google。
  */
 export async function fetchFolderAudioTracks(
   folderId: string,
@@ -186,16 +198,30 @@ export async function fetchFolderAudioTracks(
     throw new Error('尚未設定 API Key（VITE_GOOGLE_API_KEY），無法讀取公開資料夾。');
   }
 
-  // 1. 資料夾名稱（失敗不影響後續）
+  // 1. 資料夾名稱，同時確認這個資料夾能不能被讀取
+  let metaStatus = 0;
   try {
     const res = await driveGet(
       `/files/${rootId}`,
       { fields: 'id,name', supportsAllDrives: 'true' },
       accessToken
     );
+    metaStatus = res.status;
     if (res.ok) folderName = (await res.json()).name || folderName;
   } catch (e) {
     console.warn('Could not fetch folder metadata:', e);
+  }
+
+  // 公開資料夾用 API Key 一定讀得到。回 404 代表它不是公開的（或網址有誤）。
+  // 注意：私人資料夾列出內容時不會報錯，只會回傳空清單，所以一定要在這裡先擋下來，
+  // 否則畫面會顯示「成功匯入 0 首」，使用者完全不知道原因。
+  if (metaStatus === 404) {
+    if (!accessToken) {
+      throw new AuthRequiredError(
+        '這個資料夾不是公開的（或網址有誤）。若是私人資料夾，請先登入 Google。'
+      );
+    }
+    throw new Error('找不到此資料夾，請確認網址是否正確，以及目前登入的 Google 帳號有權限存取。');
   }
 
   // 2. 掃描資料夾與所有子資料夾（BFS，限制深度，避免循環）

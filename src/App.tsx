@@ -96,6 +96,8 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
+  // 使用者貼了私人資料夾的連結時，跳出「請先登入 Google」的視窗
+  const [isPrivateDialogOpen, setIsPrivateDialogOpen] = useState(false);
 
   // 桌面版文字面板的寬度（使用者可以拖曳調整），以及是否正在拖曳
   const [transcriptWidth, setTranscriptWidth] = useState<number>(() => {
@@ -282,7 +284,11 @@ export default function App() {
       } catch (err: any) {
         console.error('Failed to load entire folder:', err);
         // 直接顯示 driveApi 給的具體原因，不再一律要求授權
-        if (!silent) setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
+        if (!silent) {
+          setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
+          // 私人資料夾：直接跳出登入視窗（貼上的連結會保留在欄位裡）
+          if (err?.name === 'AuthRequiredError') setIsPrivateDialogOpen(true);
+        }
         return false;
       } finally {
         setIsLoadingFolder(false);
@@ -309,6 +315,40 @@ export default function App() {
     // 成功才清空輸入欄；失敗時保留，方便使用者修改後重試
     if (ok) setFolderInput('');
   };
+
+  // 在「私人資料夾」視窗按登入：登入成功後，自動用欄位裡的連結匯入
+  const handlePrivateFolderLogin = async () => {
+    setIsAuthorizing(true);
+    try {
+      const res = await googleSignIn();
+      if (res?.accessToken) {
+        setAccessToken(res.accessToken);
+        setIsPrivateDialogOpen(false);
+
+        const url = folderInput.trim() || folderUrl;
+        if (url) {
+          setFolderUrl(url);
+          const ok = await loadEntireFolder(url, false, res.accessToken);
+          if (ok) setFolderInput('');
+        }
+      }
+    } catch (e) {
+      // 使用者關掉登入視窗：保持提示視窗開著，可以再試一次
+      console.warn('Sign-in cancelled or failed:', e);
+    } finally {
+      setIsAuthorizing(false);
+    }
+  };
+
+  // 私人資料夾視窗開著時，按 Escape 關閉
+  useEffect(() => {
+    if (!isPrivateDialogOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isAuthorizing) setIsPrivateDialogOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isPrivateDialogOpen, isAuthorizing]);
 
   // Play track handler — 公開資料夾不需要登入，直接播放
   const handleTrackClick = (track: AudioTrack) => {
@@ -556,6 +596,51 @@ export default function App() {
         onWidthChange={setTranscriptWidth}
         onResizingChange={setIsResizingPanel}
       />
+
+      {/* 私人資料夾提示視窗：只有貼了非公開的連結才會跳出，公開資料夾不會 */}
+      {isPrivateDialogOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => {
+            if (!isAuthorizing) setIsPrivateDialogOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="private-folder-title"
+            className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 space-y-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-[#E0F8C7] border border-[#BFE0A3] flex items-center justify-center text-[#36415A]">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+            <h2 id="private-folder-title" className="text-base font-bold text-slate-900">
+              這是私人資料夾，需要先登入 Google
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              你貼上的資料夾沒有公開，所以讀不到裡面的音檔。請用有權限的 Google 帳號登入，
+              登入後會自動匯入，你貼的連結會保留在欄位裡。
+            </p>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                onClick={handlePrivateFolderLogin}
+                disabled={isAuthorizing}
+                className="w-full px-5 py-3 rounded-2xl text-sm font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-md active:scale-95 transition disabled:opacity-50"
+              >
+                {isAuthorizing ? '登入中...' : '登入 Google'}
+              </button>
+              <button
+                onClick={() => setIsPrivateDialogOpen(false)}
+                disabled={isAuthorizing}
+                className="w-full px-5 py-2.5 rounded-2xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition disabled:opacity-50"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}
       <GoogleAuthModal
