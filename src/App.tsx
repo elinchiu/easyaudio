@@ -406,7 +406,7 @@ export default function App() {
                 Easy Audio - 播放音檔不卡卡
               </h1>
               <p className="text-[11px] text-slate-500 hidden sm:block">
-                讀取 Google Drive 資料夾 · 空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift+N 下一首 · Shift+P 上一首 · S鍵 開啟/關閉文檔視窗
+                空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift + N 下一首 · Shift + P 上一首 · S鍵 開啟/關閉文檔視窗
               </p>
             </div>
           </div>
@@ -448,7 +448,7 @@ export default function App() {
               inputMode="url"
               value={folderInput}
               onChange={(e) => setFolderInput(e.target.value)}
-              placeholder="貼上你的檔案夾"
+              placeholder="貼上資料夾連結"
               aria-label="Google Drive 資料夾連結"
               className="w-full min-w-0 bg-transparent outline-none text-sm text-[#36415A] placeholder:text-slate-500"
             />
@@ -466,7 +466,7 @@ export default function App() {
 
           {/* 使用提示：放在貼連結的欄位旁邊，讓使用者一進來就看到 */}
           <p className="basis-full px-1 text-xs text-slate-500 leading-relaxed">
-            請確認資料夾已設為「知道連結的任何人」可檢視，再貼上連結並按「匯入」。若是非公開資料夾，可登入 Google 後讀取。
+            請確認 Google Drive 資料夾已設為「知道連結的任何人」可檢視，再貼上連結並按「匯入」。若是非公開資料夾，可登入 Google 後讀取。
           </p>
         </form>
 
@@ -486,8 +486,8 @@ export default function App() {
               <div className="pt-1 flex items-center justify-between gap-3">
                 <span className="text-amber-800/80">
                   {isPrivateFolder
-                    ? '若是私人資料夾，登入 Google 後可讀取'
-                    : '若是私人資料夾，登入 Google 後可讀取'}
+                    ? '若是私人資料夾，請登入 Google 後方可讀取。'
+                    : '若是私人資料夾，請登入 Google 後方可讀取。'}
                 </span>
                 <button
                   onClick={handleLoginAndLoad}

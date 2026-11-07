@@ -250,7 +250,7 @@ function runWhisperWorker(
           stage: 'transcribing',
           message:
             language === 'auto'
-              ? '正在辨識音檔內容（自動偵測語言）...'
+              ? '正在辨識音檔內容...'
               : '正在辨識音檔內容...',
         });
       } else if (status === 'complete') {

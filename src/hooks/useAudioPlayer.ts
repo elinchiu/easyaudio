@@ -11,11 +11,11 @@ const audioBlobCache = new Map<string, string>();
 const DEFAULT_REPEAT_MODE: RepeatMode = 'off' as RepeatMode;
 
 // 還沒查出真正原因之前先顯示的暫時訊息（查到後會被取代）
-const GENERIC_LOAD_ERROR = '音檔載入失敗，正在確認原因…';
+const GENERIC_LOAD_ERROR = '音檔載入失敗，正在確認原因，請稍後...';
 
 // Google 回應正常、卻還是播不出來時的說明（多半是暫時性問題）
 const UNKNOWN_LOAD_ERROR =
-  '音檔載入失敗：Google Drive 的回應正常，可能是網路不穩、暫時無回應，或音檔格式瀏覽器無法解碼。請重整網頁後再試。';
+  '感謝耐心等候，Google Drive 的回應正常，可能是網路不穩、暫時無回應，或音檔格式瀏覽器無法解碼。請重整網頁後再試。';
 
 /**
  * 只有「確定是權限問題」而且「還沒登入」時，才提示私人檔案可以登入 Google。
@@ -24,7 +24,7 @@ const UNKNOWN_LOAD_ERROR =
 function withLoginHint(message: string, hasToken: boolean): string {
   if (hasToken) return message;
   if (!/分享設定|沒有權限|找不到此/.test(message)) return message;
-  return `${message} 若是私人檔案，請登入 Google 後再播放。`;
+  return `${message} 若是私人檔案，請登入 Google 後方可讀取。`;
 }
 
 const setPlaybackState = (state: MediaSessionPlaybackState) => {

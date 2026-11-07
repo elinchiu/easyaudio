@@ -251,7 +251,7 @@ export const TranscriptModal: React.FC<Props> = ({
                 {progress?.message || '正在辨識音檔...'}
               </h4>
               <p className="text-xs text-slate-500 leading-relaxed">
-                辨識在你的瀏覽器裡進行，音檔不會上傳到任何 AI 伺服器。時間會隨音檔長度增加，請保持網頁開啟（可以先關閉這個面板）。
+                辨識在瀏覽器裡進行，音檔不會上傳到任何 AI 伺服器。辨識時間會隨音檔長度增加，請保持網頁開啟。
               </p>
             </div>
 
