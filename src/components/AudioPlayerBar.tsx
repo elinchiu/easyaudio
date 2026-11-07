@@ -98,7 +98,8 @@ interface Props {
   onSetPointA: () => void;
   onSetPointB: () => void;
   onClearAB: () => void;
-  onAuthorizeGoogle?: () => void;
+  /** 播放失敗時顯示在錯誤列的「重試」按鈕 */
+  onRetry?: () => void;
   onOpenTranscript?: () => void;
 }
 
@@ -126,7 +127,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
   onSetPointA,
   onSetPointB,
   onClearAB,
-  onAuthorizeGoogle,
+  onRetry,
   onOpenTranscript,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -251,7 +252,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                       onOpenTranscript();
                     }}
                     className="shrink-0 inline-flex items-center justify-center p-1.5 rounded-lg bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-2xs"
-                    title="音檔文字（開啟 / 收起）"
+                    title="音檔文字（開啟 / 收起，快捷鍵: S）"
                     aria-label="音檔文字"
                   >
                     <FileText className="w-3.5 h-3.5 text-[#36415A]" />
@@ -401,16 +402,16 @@ export const AudioPlayerBar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* 播放錯誤提示 */}
+        {/* 播放錯誤提示：顯示實際原因，並提供「重試」（不再要求登入） */}
         {audioError && (
           <div className="bg-rose-50 text-rose-800 text-xs py-2 px-4 border-t border-rose-200 font-medium flex items-center justify-between gap-3 flex-wrap">
             <span>{audioError}</span>
-            {onAuthorizeGoogle && (
+            {onRetry && (
               <button
-                onClick={onAuthorizeGoogle}
+                onClick={onRetry}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-3 py-1 rounded-lg text-xs transition shadow-xs shrink-0"
               >
-                點此授權 Google 讀取
+                重試
               </button>
             )}
           </div>

@@ -22,7 +22,10 @@ export type TrackJobStatus = 'idle' | 'queued' | 'running' | 'error';
 const TRANSCRIBE_LANGUAGE = 'german';
 
 interface Params {
-  /** 取得「指定音檔」的 Blob，不需要先播放它 */
+  /**
+   * 取得「指定音檔」的 Blob，不需要先播放它。
+   * 失敗時應該丟出帶有真正原因的 Error（訊息會直接顯示給使用者）。
+   */
   getTrackAudioBlob: (track: AudioTrack) => Promise<Blob | null>;
 }
 
@@ -89,9 +92,10 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
         };
 
         try {
+          // 取得音檔失敗時，getTrackAudioBlob 會丟出帶有真正原因的錯誤，直接顯示給使用者
           const blob = await getBlobRef.current(track);
           if (controller.signal.aborted) throw new DOMException('已取消辨識', 'AbortError');
-          if (!blob) throw new Error('無法取得音檔內容，請確認檔案分享權限。');
+          if (!blob) throw new Error('無法取得音檔內容，請稍後再試。');
 
           const result = await transcribeAudioWithWhisper(
             blob,

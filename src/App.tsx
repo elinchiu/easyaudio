@@ -31,6 +31,28 @@ import {
 
 const DURATION_CACHE_KEY = 'tb_track_durations';
 const TRANSCRIPT_WIDTH_KEY = 'tb_transcript_width';
+const SAVED_FOLDER_KEY = 'tb_saved_folder_v1';
+
+/** 上次匯入的資料夾：重整網頁後用來還原，使用者不需要重新貼連結 */
+interface SavedFolder {
+  url: string;
+  name: string;
+  tracks: AudioTrack[];
+}
+
+function readSavedFolder(): SavedFolder | null {
+  try {
+    const raw = localStorage.getItem(SAVED_FOLDER_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data && typeof data.url === 'string' && Array.isArray(data.tracks)) {
+      return { url: data.url, name: data.name || 'File Name', tracks: data.tracks };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
 
 /**
  * 使用者開始播放某一首時，是否自動辨識「這一首」的文字（不做批次，一次只辨識正在播放的那一首；
@@ -43,10 +65,11 @@ const TRANSCRIPT_WIDTH_KEY = 'tb_transcript_width';
 const AUTO_TRANSCRIBE_ON_PLAY = true;
 
 export default function App() {
-  // 每次載入／重整都從空白開始：不從 localStorage 還原資料夾與歌單
-  const [folderUrl, setFolderUrl] = useState<string>('');
-  const [folderName, setFolderName] = useState<string>('File Name');
-  const [tracks, setTracks] = useState<AudioTrack[]>([]);
+  // 重整網頁後，還原上次匯入的資料夾與歌單（第一次使用或從沒匯入過就是空白）
+  const [initialSaved] = useState<SavedFolder | null>(readSavedFolder);
+  const [folderUrl, setFolderUrl] = useState<string>(initialSaved?.url ?? '');
+  const [folderName, setFolderName] = useState<string>(initialSaved?.name ?? 'File Name');
+  const [tracks, setTracks] = useState<AudioTrack[]>(initialSaved?.tracks ?? []);
 
   const [isLoadingFolder, setIsLoadingFolder] = useState<boolean>(false);
   const [folderError, setFolderError] = useState<string | null>(null);
@@ -203,11 +226,13 @@ export default function App() {
       targetUrlOrId: string, 
       forceAuth = false, 
       explicitToken?: string | null, 
-      trackToPlayAfter?: AudioTrack | null
+      trackToPlayAfter?: AudioTrack | null,
+      // silent：背景更新用。失敗時保留目前的歌單，不跳出錯誤訊息
+      silent = false
     ): Promise<boolean> => {
       const folderId = extractFolderId(targetUrlOrId);
       setIsLoadingFolder(true);
-      setFolderError(null);
+      if (!silent) setFolderError(null);
 
       let token = explicitToken !== undefined ? explicitToken : accessToken;
 
@@ -233,6 +258,16 @@ export default function App() {
         setTracks(result.tracks);
         player.setPlaylist(result.tracks);
 
+        // 存起來，重整網頁後可以直接還原
+        try {
+          localStorage.setItem(
+            SAVED_FOLDER_KEY,
+            JSON.stringify({ url: targetUrlOrId, name: result.folderName, tracks: result.tracks })
+          );
+        } catch {
+          // 空間不足就算了，只是重整後要重新匯入
+        }
+
         // 匯入不會自動開始辨識（等使用者播放某一首才辨識那一首）。
         // 這裡只清理：換了另一個資料夾時，舊資料夾的辨識會被放棄；
         // 重新整理同一個資料夾則不會中斷正在跑的辨識。
@@ -247,7 +282,7 @@ export default function App() {
       } catch (err: any) {
         console.error('Failed to load entire folder:', err);
         // 直接顯示 driveApi 給的具體原因，不再一律要求授權
-        setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
+        if (!silent) setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
         return false;
       } finally {
         setIsLoadingFolder(false);
@@ -255,6 +290,13 @@ export default function App() {
     },
     [accessToken, player, queue.retainOnly]
   );
+
+  // 還原上次的資料夾後，在背景重新讀取一次：歌單馬上就能用，同時更新檔案清單與串流網址。
+  // 背景更新失敗（例如沒網路）不會報錯，繼續使用還原的歌單。
+  useEffect(() => {
+    if (folderUrl) void loadEntireFolder(folderUrl, false, undefined, null, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 按「匯入」：載入貼上的資料夾連結
   const handleImport = async (e?: React.FormEvent) => {
@@ -499,7 +541,6 @@ export default function App() {
         onSetPointA={player.setPointA}
         onSetPointB={player.setPointB}
         onClearAB={player.clearABRepeat}
-        onAuthorizeGoogle={() => handleAuthorize()}
         onOpenTranscript={() => setIsTranscriptModalOpen((open) => !open)}
       />
 

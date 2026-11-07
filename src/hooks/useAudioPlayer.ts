@@ -10,12 +10,50 @@ const audioBlobCache = new Map<string, string>();
 // 如果你的 types/track.ts 用的不是 'off'（例如 'none' 或 'normal'），只要改這一行。
 const DEFAULT_REPEAT_MODE: RepeatMode = 'off' as RepeatMode;
 
-const GENERIC_LOAD_ERROR =
-  '音檔載入失敗。請確認檔案已設為「知道連結的任何人」可檢視，且網站的 API Key 設定正確。若是私人檔案，請登入 Google 後再播放。';
+// 還沒查出真正原因之前先顯示的暫時訊息（查到後會被取代）
+const GENERIC_LOAD_ERROR = '音檔載入失敗，正在確認原因…';
+
+// Google 回應正常、卻還是播不出來時的說明（多半是暫時性問題）
+const UNKNOWN_LOAD_ERROR =
+  '音檔載入失敗：Google Drive 的回應正常，可能是網路不穩、暫時無回應，或音檔格式瀏覽器無法解碼。請重整網頁後再試。';
+
+/**
+ * 只有「確定是權限問題」而且「還沒登入」時，才提示私人檔案可以登入 Google。
+ * 流量上限、API Key 設定、網路不穩等其他原因都不會出現這句，公開資料夾也就不會被要求登入。
+ */
+function withLoginHint(message: string, hasToken: boolean): string {
+  if (hasToken) return message;
+  if (!/分享設定|沒有權限|找不到此/.test(message)) return message;
+  return `${message} 若是私人檔案，請登入 Google 後再播放。`;
+}
 
 const setPlaybackState = (state: MediaSessionPlaybackState) => {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
 };
+
+// 同一個網址短時間內只向 Google 查一次原因（<audio> 的 error 事件與 play() 失敗常常同時發生）
+const diagnosisCache = new Map<string, Promise<string>>();
+
+/**
+ * 播放失敗後，向 Google 查出真正的原因（<audio> 本身看不到錯誤內容）。
+ * 一定會回傳一段訊息：查得到就是具體原因，查不到就是通用說明。
+ */
+function diagnoseLoadFailure(src: string): Promise<string> {
+  const cached = diagnosisCache.get(src);
+  if (cached) return cached;
+
+  const task = (async () => {
+    if (src.includes('googleapis.com')) {
+      const real = await explainMediaUrlError(src);
+      if (real) return real;
+    }
+    return UNKNOWN_LOAD_ERROR;
+  })();
+
+  diagnosisCache.set(src, task);
+  setTimeout(() => diagnosisCache.delete(src), 5000);
+  return task;
+}
 
 // _onRequestAuth 保留參數以維持相容；公開資料夾不再需要它
 export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () => void) {
@@ -23,6 +61,9 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
 
   // 讓 audio 的 ended 事件永遠呼叫最新版本的 handleTrackEnd（避免拿到舊的空 playlist）
   const handleTrackEndRef = useRef<() => void>(() => {});
+
+  // 每次 playTrack 都會領一個新的編號；快速連點切歌時，舊的請求回來後發現自己過期就直接放棄
+  const playRequestRef = useRef(0);
 
   const [playlist, setPlaylist] = useState<AudioTrack[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(-1);
@@ -40,6 +81,10 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
   const [abRepeat, setAbRepeat] = useState<ABRepeat>({ enabled: false, pointA: null, pointB: null });
   const abRepeatRef = useRef(abRepeat);
   abRepeatRef.current = abRepeat;
+
+  // 讓只建立一次的 audio 事件處理函式也能讀到最新的登入狀態
+  const accessTokenRef = useRef(accessToken);
+  accessTokenRef.current = accessToken;
   
   const currentTrack = playlist[currentTrackIndex] || null;
 
@@ -76,17 +121,18 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     };
     const onEnded = () => handleTrackEndRef.current();
     const onError = () => {
+      // 沒有音源（例如剛清掉 src）時也會觸發 error，這不是真的失敗
+      if (!audio.getAttribute('src')) return;
+
       setIsLoadingAudio(false);
       setIsPlaying(false);
       setAudioError(GENERIC_LOAD_ERROR);
 
-      // <audio> 看不到失敗的原因，所以向 Google 查一次，把真正的原因（例如 403 / 流量上限）顯示出來
+      // 向 Google 查出真正的原因（例如 403、流量上限、API Key 設定），再換掉暫時訊息
       const src = audio.src;
-      if (src.includes('googleapis.com')) {
-        explainMediaUrlError(src).then((message) => {
-          if (message && audio.src === src) setAudioError(message);
-        });
-      }
+      diagnoseLoadFailure(src).then((message) => {
+        if (audio.src === src) setAudioError(withLoginHint(message, !!accessTokenRef.current));
+      });
     };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
@@ -112,6 +158,9 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
       const audio = audioRef.current;
       if (!audio) return;
 
+      const requestId = ++playRequestRef.current;
+      const isStale = () => requestId !== playRequestRef.current;
+
       const activeList = trackList || playlist;
       if (trackList) setPlaylist(trackList);
 
@@ -130,6 +179,7 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
           url = await getTrackPlayableUrl(track, accessToken);
           if (url?.startsWith('blob:')) audioBlobCache.set(track.id, url);
         }
+        if (isStale()) return; // 使用者已經切到別首，這一首不用播了
         if (!url) throw new Error('無法取得可播放的音訊串流網址');
 
         audio.src = url;
@@ -137,6 +187,7 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
         audio.volume = isMuted ? 0 : volume;
 
         await audio.play();
+        if (isStale()) return;
         setIsPlaying(true);
 
         // 鎖定畫面的媒體控制資訊
@@ -154,13 +205,39 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
           setPlaybackState('playing');
         }
       } catch (err: any) {
+        if (isStale()) return;
         console.error('Play track failed:', err);
-        setAudioError(err.message || '音檔播放失敗，請確認檔案已公開分享。');
         setIsLoadingAudio(false);
+        setIsPlaying(false);
+
+        // 被新的載入或暫停打斷，不是真的錯誤
+        if (err?.name === 'AbortError') return;
+
+        if (err?.name === 'NotAllowedError') {
+          setAudioError('瀏覽器擋下了自動播放，請再按一次播放鍵。');
+          return;
+        }
+
+        if (err?.name === 'NotSupportedError') {
+          // 瀏覽器只會說 "no supported source was found"，真正原因要向 Google 查
+          const src = audio.src;
+          setAudioError(GENERIC_LOAD_ERROR);
+          diagnoseLoadFailure(src).then((message) => {
+            if (audio.src === src) setAudioError(withLoginHint(message, !!accessTokenRef.current));
+          });
+          return;
+        }
+
+        setAudioError(err?.message || UNKNOWN_LOAD_ERROR);
       }
     },
     [playlist, playbackRate, volume, isMuted, accessToken]
   );
+
+  // 重新載入並播放目前這一首（播放失敗後按「重試」）
+  const retry = useCallback(() => {
+    if (currentTrack) playTrack(currentTrack);
+  }, [currentTrack, playTrack]);
 
   // 播放 / 暫停
   const togglePlay = useCallback(() => {
@@ -311,30 +388,36 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
   }, [togglePlay, prevTrack, nextTrack, skip, seek]);
 
   // 取得「指定音檔」的 Blob（不一定是正在播放的那首），供語音辨識使用。
+  // 失敗時會丟出帶有「真正原因」的錯誤（辨識面板直接顯示這段訊息），不再只回傳 null
   const getTrackAudioBlob = useCallback(
     async (track: AudioTrack): Promise<Blob | null> => {
-      try {
-        // 1. 已經有記憶體快取的 blob 網址（播放過、或之前下載過）就直接用
-        const cachedUrl = audioBlobCache.get(track.id);
-        if (cachedUrl) {
-          const res = await fetch(cachedUrl);
-          return await res.blob();
-        }
-
-        // 2. 否則透過 driveApi 取得可播放網址並下載
-        const playableUrl = await getTrackPlayableUrl(track, accessToken);
-        if (!playableUrl) return null;
-
-        // 已登入時 driveApi 會回傳 blob: 網址，存進快取，之後播放這一首就不用再下載一次
-        if (playableUrl.startsWith('blob:')) audioBlobCache.set(track.id, playableUrl);
-
-        const res = await fetch(playableUrl);
-        if (!res.ok) throw new Error(`下載音檔失敗（HTTP ${res.status}）`);
+      // 1. 已經有記憶體快取的 blob 網址（播放過、或之前下載過）就直接用
+      const cachedUrl = audioBlobCache.get(track.id);
+      if (cachedUrl) {
+        const res = await fetch(cachedUrl);
         return await res.blob();
-      } catch (e) {
-        console.warn('Failed to retrieve audio blob for transcription:', e);
-        return null;
       }
+
+      // 2. 否則透過 driveApi 取得可播放網址並下載
+      const playableUrl = await getTrackPlayableUrl(track, accessToken);
+      if (!playableUrl) throw new Error('無法取得音檔的下載網址。');
+
+      // 已登入時 driveApi 會回傳 blob: 網址，存進快取，之後播放這一首就不用再下載一次
+      if (playableUrl.startsWith('blob:')) audioBlobCache.set(track.id, playableUrl);
+
+      let res: Response;
+      try {
+        res = await fetch(playableUrl);
+      } catch {
+        throw new Error('網路連線失敗，無法下載音檔，請確認網路後再試。');
+      }
+
+      if (!res.ok) {
+        // 向 Google 查出真正的原因；只有確定是權限問題且還沒登入時，才會提示私人檔案可以登入
+        const reason = await explainMediaUrlError(playableUrl);
+        throw new Error(withLoginHint(reason ?? `下載音檔失敗（HTTP ${res.status}）`, !!accessToken));
+      }
+      return await res.blob();
     },
     [accessToken]
   );
@@ -355,6 +438,7 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     playlist,
     setPlaylist,
     playTrack,
+    retry,
     togglePlay,
     nextTrack,
     prevTrack,
