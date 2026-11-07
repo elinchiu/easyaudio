@@ -24,8 +24,8 @@ export interface TranscribeProgress {
 //   whisper-tiny  下載量約 40MB，速度最快，但準確度較低
 //   whisper-base  下載量約 80–100MB，速度快、準確度普通
 //   whisper-small 下載量約 250–290MB，準確度明顯較好，但較慢、較吃記憶體
-const WHISPER_MODEL = 'Xenova/whisper-small';
-const MODEL_DOWNLOAD_HINT = '約 250–290MB';
+const WHISPER_MODEL = 'Xenova/whisper-base';
+const MODEL_DOWNLOAD_HINT = '約 80–100MB';
 
 // 下載進度只統計大於這個大小的檔案（也就是真正的模型檔），
 // 否則幾 KB 的設定檔一下載完，進度條就會先衝到 100%。
