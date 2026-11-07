@@ -470,6 +470,36 @@ export default function App() {
           </p>
         </form>
 
+        {/* Error banner：顯示實際原因；私人資料夾可選擇登入 Google */}
+        {folderError && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm text-xs text-amber-900 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1 font-medium leading-relaxed">{folderError}</div>
+            </div>
+            {!isPrivateFolder && (
+              <div className="text-amber-800/80 pl-6">
+                請確認資料夾（含子資料夾與檔案）的分享設定為「知道連結的任何人 → 檢視者」。
+              </div>
+            )}
+            {!accessToken && (
+              <div className="pt-1 flex items-center justify-between gap-3">
+                <span className="text-amber-800/80">
+                  {isPrivateFolder
+                    ? '若是私人資料夾，登入 Google 後可讀取'
+                    : '若是私人資料夾，登入 Google 後可讀取'}
+                </span>
+                <button
+                  onClick={handleLoginAndLoad}
+                  className="shrink-0 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-2 rounded-xl shadow-sm active:scale-95 transition text-xs"
+                >
+                  <span>登入 Google 讀取</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Drive Folder Status Banner */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -497,36 +527,6 @@ export default function App() {
             </button>
           </div>
         </div>
-
-        {/* Error banner：顯示實際原因；私人資料夾可選擇登入 Google */}
-        {folderError && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm text-xs text-amber-900 space-y-2">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="flex-1 font-medium leading-relaxed">{folderError}</div>
-            </div>
-            {!isPrivateFolder && (
-              <div className="text-amber-800/80 pl-6">
-                請確認資料夾（含子資料夾與檔案）的分享設定為「知道連結的任何人 → 檢視者」。
-              </div>
-            )}
-            {!accessToken && (
-              <div className="pt-1 flex items-center justify-between gap-3">
-                <span className="text-amber-800/80">
-                  {isPrivateFolder
-                    ? '若是私人資料夾，請登入 Google 後再匯入，你貼的連結會保留在欄位裡。'
-                    : '如果這是私人資料夾，可以登入 Google 後再讀取。'}
-                </span>
-                <button
-                  onClick={handleLoginAndLoad}
-                  className="shrink-0 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-2 rounded-xl shadow-sm active:scale-95 transition text-xs"
-                >
-                  <span>登入 Google 讀取</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Track List View with Search only (selected filter row removed, placeholder="搜尋...") */}
         <TrackListView
