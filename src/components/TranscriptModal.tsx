@@ -10,14 +10,9 @@ import {
   FileText,
   X,
   Play,
-  Copy,
-  Check,
-  Download,
-  RotateCcw,
   AlertCircle,
   Search,
   Sparkles,
-  Layers,
 } from 'lucide-react';
 
 interface Props {
@@ -61,10 +56,7 @@ export const TranscriptModal: React.FC<Props> = ({
   const [job, setJob] = useState<{ trackId: string; progress: TranscribeProgress | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 顯示模式：'synced' 逐句對照 / 'text' 純文字
-  const [viewMode, setViewMode] = useState<'synced' | 'text'>('synced');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isCopied, setIsCopied] = useState(false);
 
   const activeSegmentRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -110,9 +102,9 @@ export const TranscriptModal: React.FC<Props> = ({
 
   // 只有「換到另一句」時才捲動；不要每次播放時間更新都捲
   useEffect(() => {
-    if (!isOpen || viewMode !== 'synced' || activeId === null) return;
+    if (!isOpen || activeId === null) return;
     activeSegmentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [activeId, viewMode, isOpen]);
+  }, [activeId, isOpen]);
 
   if (!isOpen || !currentTrack) return null;
 
@@ -121,9 +113,6 @@ export const TranscriptModal: React.FC<Props> = ({
 
   const handleStartTranscribe = async () => {
     if (job) return;
-    if (transcript && !window.confirm('重新辨識會覆蓋目前的文字，確定要繼續嗎？')) {
-      return;
-    }
 
     const { id, name } = currentTrack;
     const controller = new AbortController();
@@ -163,28 +152,6 @@ export const TranscriptModal: React.FC<Props> = ({
 
   const handleCancelTranscribe = () => abortRef.current?.abort();
 
-  const handleCopyText = async () => {
-    if (!transcript?.fullText) return;
-    try {
-      await navigator.clipboard.writeText(transcript.fullText);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch (e) {
-      console.warn('Copy failed:', e);
-    }
-  };
-
-  const handleDownloadTxt = () => {
-    if (!transcript?.fullText) return;
-    const blob = new Blob([transcript.fullText], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${currentTrack.name.replace(/\.[^/.]+$/, '')}_文字.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const filteredSegments = (transcript?.segments || []).filter((seg) => {
     if (!searchQuery.trim()) return true;
     return seg.text.toLowerCase().includes(searchQuery.trim().toLowerCase());
@@ -199,66 +166,18 @@ export const TranscriptModal: React.FC<Props> = ({
             <div className="w-9 h-9 rounded-xl bg-[#E0F8C7] text-[#36415A] flex items-center justify-center shrink-0">
               <FileText className="w-5 h-5" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-slate-900 truncate">音檔文字</h3>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#E0F8C7] text-[#36415A] border border-[#BFE0A3]">
-                  Whisper 語音辨識
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 truncate" title={currentTrack.name}>
-                {currentTrack.name}
-              </p>
-            </div>
+            <p className="text-sm font-semibold text-slate-700 truncate" title={currentTrack.name}>
+              {currentTrack.name}
+            </p>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            {transcript && (
-              <>
-                <button
-                  onClick={() => setViewMode(viewMode === 'synced' ? 'text' : 'synced')}
-                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition flex items-center gap-1"
-                  title="切換逐句對照 / 純文字檢視"
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{viewMode === 'synced' ? '純文字模式' : '逐句對照'}</span>
-                </button>
-
-                <button
-                  onClick={handleCopyText}
-                  className="p-1.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
-                  title="複製全部文字"
-                >
-                  {isCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-
-                <button
-                  onClick={handleDownloadTxt}
-                  className="p-1.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
-                  title="下載為 .txt 檔案"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
-
-                <button
-                  onClick={handleStartTranscribe}
-                  disabled={!!job}
-                  className="p-1.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition disabled:opacity-50"
-                  title="重新辨識"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </>
-            )}
-
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition ml-1"
-              title="關閉（Esc）"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition shrink-0"
+            title="關閉（Esc）"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Content Body */}
@@ -369,65 +288,60 @@ export const TranscriptModal: React.FC<Props> = ({
                 )}
               </div>
 
-              {/* View Mode: Synced Subtitles */}
-              {viewMode === 'synced' ? (
-                <div className="space-y-2">
-                  {filteredSegments.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-slate-400">找不到符合搜尋的文字</div>
-                  ) : (
-                    filteredSegments.map((segment) => {
-                      const isActive = segment.id === activeId;
+              {/* Synced Subtitles */}
+              <div className="space-y-2">
+                {filteredSegments.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-400">找不到符合搜尋的文字</div>
+                ) : (
+                  filteredSegments.map((segment) => {
+                    const isActive = segment.id === activeId;
 
-                      return (
-                        <div
-                          key={segment.id}
-                          ref={isActive ? activeSegmentRef : null}
-                          onClick={() => onSeek(segment.start)}
-                          className={`p-3 rounded-2xl cursor-pointer transition-all flex items-start gap-3 select-none ${
+                    return (
+                      <div
+                        key={segment.id}
+                        ref={isActive ? activeSegmentRef : null}
+                        onClick={() => onSeek(segment.start)}
+                        className={`p-3 rounded-2xl cursor-pointer transition-all flex items-start gap-3 select-none ${
+                          isActive
+                            ? 'bg-[#E0F8C7] border border-[#BFE0A3] text-[#36415A] font-bold shadow-xs scale-[1.01]'
+                            : 'bg-white hover:bg-slate-50 border border-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {/* Timestamp Pill */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSeek(segment.start);
+                          }}
+                          className={`shrink-0 inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-lg transition ${
                             isActive
-                              ? 'bg-[#E0F8C7] border border-[#BFE0A3] text-[#36415A] font-bold shadow-xs scale-[1.01]'
-                              : 'bg-white hover:bg-slate-50 border border-slate-100 text-slate-700'
+                              ? 'bg-[#36415A] text-[#E0F8C7]'
+                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                           }`}
+                          title="跳轉至此時間點播放"
                         >
-                          {/* Timestamp Pill */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSeek(segment.start);
-                            }}
-                            className={`shrink-0 inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-lg transition ${
-                              isActive
-                                ? 'bg-[#36415A] text-[#E0F8C7]'
-                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                            }`}
-                            title="跳轉至此時間點播放"
-                          >
-                            <Play className="w-2.5 h-2.5 fill-current" />
-                            <span>{formatTime(segment.start)}</span>
-                          </button>
+                          <Play className="w-2.5 h-2.5 fill-current" />
+                          <span>{formatTime(segment.start)}</span>
+                        </button>
 
-                          {/* Segment Text */}
-                          <div className="flex-1 text-sm leading-relaxed">{segment.text}</div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              ) : (
-                /* View Mode: Plain Text */
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-sm leading-relaxed text-slate-800 whitespace-pre-wrap select-text font-sans">
-                  {transcript.fullText}
-                </div>
-              )}
+                        {/* Segment Text */}
+                        <div className="flex-1 text-sm leading-relaxed">{segment.text}</div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Footer info */}
-        <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
-          <span>點擊任意句子即可直接跳轉</span>
-          <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 語音辨識'}</span>
-        </div>
+        {/* Footer info：有文字之後才顯示 */}
+        {transcript && !isTranscribing && (
+          <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
+            <span>點擊任意句子即可直接跳轉</span>
+            <span>共 {transcript.segments.length} 個語句段落</span>
+          </div>
+        )}
       </div>
     </div>
   );

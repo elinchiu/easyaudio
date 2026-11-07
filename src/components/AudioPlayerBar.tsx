@@ -223,7 +223,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                     title="開啟音檔文字（Whisper 德文語音辨識 / 字幕）"
                   >
                     <FileText className="w-3 h-3 text-[#36415A]" />
-                    <span>音檔文字</span>
+                    <span>Script</span>
                   </button>
                 )}
               </div>
@@ -416,7 +416,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                 className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-xs"
               >
                 <FileText className="w-3.5 h-3.5 text-[#36415A]" />
-                <span>音檔文字</span>
+                <span>Script</span>
               </button>
             )}
           </div>
