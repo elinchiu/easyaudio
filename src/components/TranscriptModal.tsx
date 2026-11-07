@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AudioTrack } from '../types/track';
-import {
-  TrackTranscript,
-  getCachedTranscript,
-  transcribeAudioWithWhisper,
-  TranscribeProgress,
-} from '../lib/whisper';
+import { TrackTranscript } from '../lib/whisper';
+import type { TranscriptionQueue } from '../hooks/useTranscriptionQueue';
 import {
   FileText,
   X,
@@ -20,19 +16,10 @@ interface Props {
   onClose: () => void;
   currentTrack: AudioTrack | null;
   currentTime: number;
-  /** 已不再使用（原本是貼上課本文字時分配時間用）。保留成選填，父元件不用馬上改 */
-  duration?: number;
   onSeek: (time: number) => void;
-  /** 取得目前播放中音檔的 Blob（交給 Whisper 辨識用） */
-  getAudioBlob: () => Promise<Blob | null>;
+  /** 語音辨識佇列（由 App 最上層建立；面板關著時辨識也會在背景繼續） */
+  queue: TranscriptionQueue;
 }
-
-/**
- * 辨識語言：目前主要處理德語音檔，固定使用德文。
- * 值必須是 Whisper 認得的語言名稱（英文小寫）。
- * 要改成自動偵測，把它改成 'auto' 即可。
- */
-const TRANSCRIBE_LANGUAGE = 'german';
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -47,28 +34,14 @@ export const TranscriptModal: React.FC<Props> = ({
   currentTrack,
   currentTime,
   onSeek,
-  getAudioBlob,
+  queue,
 }) => {
   const trackId = currentTrack?.id ?? null;
 
   const [transcript, setTranscript] = useState<TrackTranscript | null>(null);
-  // 正在進行的辨識工作。同一時間只允許一個，並記下它是哪一首的
-  const [job, setJob] = useState<{ trackId: string; progress: TranscribeProgress | null } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const [searchQuery, setSearchQuery] = useState('');
 
   const activeSegmentRef = useRef<HTMLDivElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  // 辨識是非同步的：完成時要確認使用者還停在同一首，才能更新畫面
-  const currentTrackIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    currentTrackIdRef.current = trackId;
-  }, [trackId]);
-
-  // 元件被移除時，取消還在跑的辨識
-  useEffect(() => () => abortRef.current?.abort(), []);
 
   // 面板開啟時，按 Escape 關閉；面板關閉或元件卸載時移除監聽
   useEffect(() => {
@@ -82,13 +55,16 @@ export const TranscriptModal: React.FC<Props> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // 開啟面板或切歌時，讀取這首歌已存的文字
+  // 開啟面板、切歌、或任何一首辨識完成（queue.version 變動）時，重新讀取這首歌的文字
   useEffect(() => {
     if (!trackId || !isOpen) return;
-    setTranscript(getCachedTranscript(trackId));
-    setError(null);
+    setTranscript(queue.getTranscript(trackId));
+  }, [trackId, isOpen, queue.version, queue.getTranscript]);
+
+  // 切歌時清空搜尋
+  useEffect(() => {
     setSearchQuery('');
-  }, [trackId, isOpen]);
+  }, [trackId]);
 
   // 目前播放到哪一句：開始時間不晚於目前時間的最後一句
   const activeId = useMemo(() => {
@@ -108,54 +84,27 @@ export const TranscriptModal: React.FC<Props> = ({
 
   if (!isOpen || !currentTrack) return null;
 
-  const isTranscribing = job?.trackId === currentTrack.id;
-  const isBusyWithOtherTrack = !!job && job.trackId !== currentTrack.id;
+  // 這一首在佇列裡的狀態
+  const status = queue.statusOf(currentTrack.id);
+  const isTranscribing = status === 'running';
+  const isQueued = status === 'queued';
+  const error = queue.errors[currentTrack.id] ?? null;
+  const progress = isTranscribing ? queue.progress : null;
+  const queuePosition = isQueued ? queue.queuedIds.indexOf(currentTrack.id) + 1 : 0;
+  // 別首正在辨識：按下「開始辨識」會插隊到最前面，但還是要等正在跑的那首完成
+  const isOtherTrackRunning = queue.runningId !== null && queue.runningId !== currentTrack.id;
 
-  const handleStartTranscribe = async () => {
-    if (job) return;
-
-    const { id, name } = currentTrack;
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setError(null);
-    setJob({ trackId: id, progress: { stage: 'decoding', message: '正在讀取音訊檔...' } });
-
-    try {
-      const audioBlob = await getAudioBlob();
-      if (!audioBlob) throw new Error('無法取得音檔內容，請確認檔案分享權限。');
-      if (controller.signal.aborted) return;
-
-      // 固定用德文辨識
-      const result = await transcribeAudioWithWhisper(
-        audioBlob,
-        id,
-        name,
-        TRANSCRIBE_LANGUAGE,
-        (progress) => setJob((j) => (j && j.trackId === id ? { ...j, progress } : j)),
-        controller.signal
-      );
-
-      // 結果已經存進快取。只有使用者還停在這一首時，才更新畫面
-      if (currentTrackIdRef.current === id) setTranscript(result);
-    } catch (err: any) {
-      if (err?.name === 'AbortError') return; // 使用者按了取消
-      console.error('Whisper transcription failed:', err);
-      if (currentTrackIdRef.current === id) {
-        setError(err?.message || '辨識失敗，請稍後再試。');
-      }
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setJob(null);
-    }
-  };
-
-  const handleCancelTranscribe = () => abortRef.current?.abort();
+  // 手動辨識這一首：插隊到最前面
+  const handleStartTranscribe = () => queue.enqueue([currentTrack], { priority: true });
+  // 取消這一首（辨識中會中止、排隊中會移除）
+  const handleCancelTranscribe = () => queue.cancelTrack(currentTrack.id);
 
   const filteredSegments = (transcript?.segments || []).filter((seg) => {
     if (!searchQuery.trim()) return true;
     return seg.text.toLowerCase().includes(searchQuery.trim().toLowerCase());
   });
+
+  const showBatch = queue.isActive && queue.batch.total > 0;
 
   return (
     // 固定在畫面右側的面板（不是彈跳視窗，沒有遮罩，後面的畫面仍可操作）
@@ -206,23 +155,23 @@ export const TranscriptModal: React.FC<Props> = ({
             </div>
             <div className="space-y-1.5 max-w-sm">
               <h4 className="text-base font-bold text-slate-900">
-                {job?.progress?.message || '正在辨識音檔...'}
+                {progress?.message || '正在辨識音檔...'}
               </h4>
               <p className="text-xs text-slate-500 leading-relaxed">
                 辨識在你的瀏覽器裡進行，音檔不會上傳到任何 AI 伺服器。時間會隨音檔長度增加，請保持網頁開啟（可以先關閉這個面板）。
               </p>
             </div>
 
-            {job?.progress?.percent !== undefined && (
+            {progress?.percent !== undefined && (
               <div className="w-full max-w-xs space-y-1.5">
                 <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
                   <div
                     className="h-full bg-[#36415A] transition-all duration-300"
-                    style={{ width: `${job.progress.percent}%` }}
+                    style={{ width: `${progress.percent}%` }}
                   />
                 </div>
                 <div className="text-[11px] text-slate-400 font-mono text-right">
-                  {job.progress.percent}%
+                  {progress.percent}%
                 </div>
               </div>
             )}
@@ -244,27 +193,40 @@ export const TranscriptModal: React.FC<Props> = ({
               <FileText className="w-8 h-8" />
             </div>
             <div className="space-y-1.5 max-w-md">
-              <h4 className="text-base font-bold text-slate-900">目前音檔尚未轉錄文字</h4>
+              <h4 className="text-base font-bold text-slate-900">
+                {isQueued ? '已加入辨識佇列' : '目前音檔尚未轉錄文字'}
+              </h4>
               <p className="text-xs text-slate-500 leading-relaxed">
-                點擊下方按鈕辨識此音檔的內容。辨識完成後，點擊任一句就能跳到該處播放。
+                {isQueued
+                  ? `排隊中（第 ${queuePosition} 位），輪到這一首時會自動開始辨識。`
+                  : '點擊下方按鈕辨識此音檔的內容。辨識完成後，點擊任一句就能跳到該處播放。'}
               </p>
             </div>
 
-            {isBusyWithOtherTrack && (
+            {isOtherTrackRunning && (
               <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                另一首音檔正在辨識中，完成後才能辨識這一首。
+                另一首音檔正在辨識中，完成後會輪到這一首。
               </div>
             )}
 
             <div className="pt-3 flex flex-col items-center gap-3 w-full max-w-sm">
-              <button
-                onClick={handleStartTranscribe}
-                disabled={isBusyWithOtherTrack}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-md active:scale-95 transition disabled:opacity-50"
-              >
-                <Sparkles className="w-4 h-4 text-[#E0F8C7]" />
-                <span>開始辨識</span>
-              </button>
+              {isQueued ? (
+                <button
+                  type="button"
+                  onClick={handleCancelTranscribe}
+                  className="w-full px-5 py-3 rounded-2xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition"
+                >
+                  取消排隊
+                </button>
+              ) : (
+                <button
+                  onClick={handleStartTranscribe}
+                  className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-md active:scale-95 transition"
+                >
+                  <Sparkles className="w-4 h-4 text-[#E0F8C7]" />
+                  <span>{error ? '重新辨識' : '開始辨識'}</span>
+                </button>
+              )}
             </div>
 
             <div className="pt-3 text-[11px] text-slate-400">
@@ -340,10 +302,16 @@ export const TranscriptModal: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Footer info：有文字之後才顯示 */}
-      {transcript && !isTranscribing && (
-        <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
-          <span>點擊任意句子即可直接跳轉</span>
+      {/* Footer info：有文字之後顯示跳轉提示；背景批次辨識進行中時顯示整體進度 */}
+      {((transcript && !isTranscribing) || showBatch) && (
+        <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+          <span>{transcript && !isTranscribing ? '點擊任意句子即可直接跳轉' : ''}</span>
+          {showBatch && (
+            <span className="shrink-0 font-mono">
+              批次辨識 {queue.batch.done + queue.batch.failed}/{queue.batch.total}
+              {queue.batch.failed > 0 ? `（失敗 ${queue.batch.failed}）` : ''}
+            </span>
+          )}
         </div>
       )}
     </aside>
