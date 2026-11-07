@@ -164,21 +164,16 @@ export const TranscriptModal: React.FC<Props> = ({
   const isQueued = status === 'queued';
   const error = queue.errors[currentTrack.id] ?? null;
   const progress = isTranscribing ? queue.progress : null;
-  const queuePosition = isQueued ? queue.queuedIds.indexOf(currentTrack.id) + 1 : 0;
-  // 別首正在辨識：按下「開始辨識」會插隊到最前面，但還是要等正在跑的那首完成
-  const isOtherTrackRunning = queue.runningId !== null && queue.runningId !== currentTrack.id;
 
-  // 手動辨識這一首：插隊到最前面
-  const handleStartTranscribe = () => queue.enqueue([currentTrack], { priority: true });
-  // 取消這一首（辨識中會中止、排隊中會移除）
+  // 辨識這一首（手動辨識，或之前失敗後重試）
+  const handleStartTranscribe = () => queue.transcribeOnly(currentTrack);
+  // 取消這一首（辨識中會中止、等候中會移除）
   const handleCancelTranscribe = () => queue.cancelTrack(currentTrack.id);
 
   const filteredSegments = (transcript?.segments || []).filter((seg) => {
     if (!searchQuery.trim()) return true;
     return seg.text.toLowerCase().includes(searchQuery.trim().toLowerCase());
   });
-
-  const showBatch = queue.isActive && queue.batch.total > 0;
 
   return (
     // 固定在畫面右側的面板（不是彈跳視窗，沒有遮罩，後面的畫面仍可操作）
@@ -292,20 +287,14 @@ export const TranscriptModal: React.FC<Props> = ({
             </div>
             <div className="space-y-1.5 max-w-md">
               <h4 className="text-base font-bold text-slate-900">
-                {isQueued ? '已加入辨識佇列' : '目前音檔尚未轉錄文字'}
+                {isQueued ? '準備辨識中' : '目前音檔尚未轉錄文字'}
               </h4>
               <p className="text-xs text-slate-500 leading-relaxed">
                 {isQueued
-                  ? `排隊中（第 ${queuePosition} 位），輪到這一首時會自動開始辨識。`
+                  ? '即將開始辨識這一首。'
                   : '點擊下方按鈕辨識此音檔的內容。辨識完成後，點擊任一句就能跳到該處播放。'}
               </p>
             </div>
-
-            {isOtherTrackRunning && (
-              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                另一首音檔正在辨識中，完成後會輪到這一首。
-              </div>
-            )}
 
             <div className="pt-3 flex flex-col items-center gap-3 w-full max-w-sm">
               {isQueued ? (
@@ -314,7 +303,7 @@ export const TranscriptModal: React.FC<Props> = ({
                   onClick={handleCancelTranscribe}
                   className="w-full px-5 py-3 rounded-2xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition"
                 >
-                  取消排隊
+                  取消
                 </button>
               ) : (
                 <button
@@ -400,16 +389,10 @@ export const TranscriptModal: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Footer info：有文字之後顯示跳轉提示；背景批次辨識進行中時顯示整體進度 */}
-      {((transcript && !isTranscribing) || showBatch) && (
-        <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 text-[11px] text-slate-500">
-          <span>{transcript && !isTranscribing ? '點擊任意句子即可直接跳轉' : ''}</span>
-          {showBatch && (
-            <span className="shrink-0 font-mono">
-              批次辨識 {queue.batch.done + queue.batch.failed}/{queue.batch.total}
-              {queue.batch.failed > 0 ? `（失敗 ${queue.batch.failed}）` : ''}
-            </span>
-          )}
+      {/* Footer info：有文字之後才顯示 */}
+      {transcript && !isTranscribing && (
+        <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
+          <span>點擊任意句子即可直接跳轉</span>
         </div>
       )}
     </aside>

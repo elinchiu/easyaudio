@@ -33,11 +33,12 @@ const DURATION_CACHE_KEY = 'tb_track_durations';
 const TRANSCRIPT_WIDTH_KEY = 'tb_transcript_width';
 
 /**
- * 使用者開始播放某一首時，是否自動從「這一首」開始，往後把還沒有文字的音檔排進背景辨識。
- * 匯入資料夾本身不會觸發辨識：使用者不一定從第一首聽起，所以等他選了要播的那一首再開始。
+ * 使用者開始播放某一首時，是否自動辨識「這一首」的文字（不做批次，一次只辨識正在播放的那一首；
+ * 切到別首時，前一首沒辨識完的會被放棄，改辨識新的這一首）。
+ * 匯入資料夾本身不會觸發辨識。
  * 第一次使用會自動下載語音辨識模型（約 250–290MB），而且辨識很吃 CPU：
- * 手機上可能耗電、發燙，音檔很多時甚至會影響播放順暢度。
- * 不想自動跑就改成 false（之後仍可在文字面板裡按「開始辨識」手動辨識單一首）。
+ * 手機上可能耗電、發燙，可能影響播放順暢度。
+ * 不想自動跑就改成 false（之後仍可在文字面板裡按「開始辨識」手動辨識這一首）。
  */
 const AUTO_TRANSCRIBE_ON_PLAY = true;
 
@@ -46,10 +47,6 @@ export default function App() {
   const [folderUrl, setFolderUrl] = useState<string>('');
   const [folderName, setFolderName] = useState<string>('File Name');
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
-
-  // 讓 effect 讀得到最新的歌單，又不會因為歌單重新載入而重跑
-  const tracksRef = useRef<AudioTrack[]>(tracks);
-  tracksRef.current = tracks;
 
   const [isLoadingFolder, setIsLoadingFolder] = useState<boolean>(false);
   const [folderError, setFolderError] = useState<string | null>(null);
@@ -137,16 +134,15 @@ export default function App() {
   // 語音辨識佇列：一次辨識一首，其餘排隊；放在這裡，文字面板關著時也會在背景繼續跑
   const queue = useTranscriptionQueue({ getTrackAudioBlob: player.getTrackAudioBlob });
 
-  // 使用者開始播放某一首（或切到另一首）時：
-  // - 自動辨識開啟：從這一首開始，往後把還沒有文字的音檔排到佇列最前面
-  // - 自動辨識關閉：如果這首剛好還在排隊（例如手動排的），就讓它插隊到最前面
+  // 使用者開始播放某一首（或切到另一首）時，自動辨識這一首（已經有文字的會自動略過）
+  const currentTrackRef = useRef<AudioTrack | null>(null);
+  currentTrackRef.current = player.currentTrack ?? null;
   const currentTrackId = player.currentTrack?.id;
-  const { startFrom, prioritizeIfQueued } = queue;
+  const { transcribeOnly } = queue;
   useEffect(() => {
-    if (!currentTrackId) return;
-    if (AUTO_TRANSCRIBE_ON_PLAY) startFrom(tracksRef.current, currentTrackId);
-    else prioritizeIfQueued(currentTrackId);
-  }, [currentTrackId, startFrom, prioritizeIfQueued]);
+    if (!AUTO_TRANSCRIBE_ON_PLAY || !currentTrackId) return;
+    if (currentTrackRef.current) transcribeOnly(currentTrackRef.current);
+  }, [currentTrackId, transcribeOnly]);
 
   // 播放時記錄目前這首的時長
   useEffect(() => {
@@ -224,8 +220,8 @@ export default function App() {
         setTracks(result.tracks);
         player.setPlaylist(result.tracks);
 
-        // 匯入不會自動開始辨識（等使用者播放某一首再從那裡開始）。
-        // 這裡只清理佇列：換了另一個資料夾時，舊資料夾還在排隊的音檔會被移除；
+        // 匯入不會自動開始辨識（等使用者播放某一首才辨識那一首）。
+        // 這裡只清理：換了另一個資料夾時，舊資料夾的辨識會被放棄；
         // 重新整理同一個資料夾則不會中斷正在跑的辨識。
         queue.retainOnly(result.tracks);
 
