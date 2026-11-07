@@ -509,8 +509,8 @@ export default function App() {
               <div className="pt-1 flex items-center justify-between gap-3">
                 <span className="text-amber-800/80">
                   {isPrivateFolder
-                    ? '若是私人資料夾，請登入 Google 後再匯入，你貼的連結會保留在欄位裡。'
-                    : '如果這是私人資料夾，可以登入 Google 後再讀取。'}
+                    ? '若是私人資料夾，需登入 Google 後才能讀取'
+                    : '若是私人資料夾，需登入 Google 後才能讀取'}
                 </span>
                 <button
                   onClick={handleLoginAndLoad}
