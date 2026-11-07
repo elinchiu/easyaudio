@@ -268,28 +268,41 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     });
   }, [togglePlay, prevTrack, nextTrack, skip, seek]);
 
-  // 取得目前音檔的 Blob，供 AI 產生歌詞辨識使用
+  // 取得「指定音檔」的 Blob（不一定是正在播放的那首），供語音辨識使用。
+  // 批次辨識整個資料夾時，會對清單裡的每一首呼叫這個函式。
+  const getTrackAudioBlob = useCallback(
+    async (track: AudioTrack): Promise<Blob | null> => {
+      try {
+        // 1. 已經有記憶體快取的 blob 網址（播放過、或之前下載過）就直接用
+        const cachedUrl = audioBlobCache.get(track.id);
+        if (cachedUrl) {
+          const res = await fetch(cachedUrl);
+          return await res.blob();
+        }
+
+        // 2. 否則透過 driveApi 取得可播放網址並下載
+        const playableUrl = await getTrackPlayableUrl(track, accessToken);
+        if (!playableUrl) return null;
+
+        // 已登入時 driveApi 會回傳 blob: 網址，存進快取，之後播放這一首就不用再下載一次
+        if (playableUrl.startsWith('blob:')) audioBlobCache.set(track.id, playableUrl);
+
+        const res = await fetch(playableUrl);
+        if (!res.ok) throw new Error(`下載音檔失敗（HTTP ${res.status}）`);
+        return await res.blob();
+      } catch (e) {
+        console.warn('Failed to retrieve audio blob for transcription:', e);
+        return null;
+      }
+    },
+    [accessToken]
+  );
+
+  // 取得目前播放中音檔的 Blob（保留給舊的呼叫方式使用）
   const getCurrentAudioBlob = useCallback(async (): Promise<Blob | null> => {
     if (!currentTrack) return null;
-    try {
-      // 1. 如果已經有記憶體快取的 Blob URL 或 audio.src 是 blob:
-      const src = audioRef.current?.src || audioBlobCache.get(currentTrack.id);
-      if (src && src.startsWith('blob:')) {
-        const res = await fetch(src);
-        return await res.blob();
-      }
-
-      // 2. 否則透過 driveApi 取得可播放網址並下載
-      const playableUrl = await getTrackPlayableUrl(currentTrack, accessToken);
-      if (playableUrl) {
-        const res = await fetch(playableUrl);
-        return await res.blob();
-      }
-    } catch (e) {
-      console.warn('Failed to retrieve audio blob for transcription:', e);
-    }
-    return null;
-  }, [currentTrack, accessToken]);
+    return getTrackAudioBlob(currentTrack);
+  }, [currentTrack, getTrackAudioBlob]);
 
   return {
     currentTrack,
@@ -320,5 +333,6 @@ export function useAudioPlayer(accessToken?: string | null, _onRequestAuth?: () 
     setPointB,
     clearABRepeat,
     getCurrentAudioBlob,
+    getTrackAudioBlob,
   };
 }

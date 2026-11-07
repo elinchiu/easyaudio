@@ -44,6 +44,15 @@ export function getCachedTranscript(trackId: string): TrackTranscript | null {
   }
 }
 
+/** 只檢查有沒有存過，不解析內容（批次辨識要快速掃過整個資料夾時用） */
+export function hasCachedTranscript(trackId: string): boolean {
+  try {
+    return localStorage.getItem(TRANSCRIPT_STORAGE_PREFIX + trackId) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function saveCachedTranscript(transcript: TrackTranscript): void {
   try {
     localStorage.setItem(TRANSCRIPT_STORAGE_PREFIX + transcript.trackId, JSON.stringify(transcript));
@@ -100,6 +109,54 @@ function abortError() {
   return new DOMException('已取消辨識', 'AbortError');
 }
 
+// ───────────────────────── 共用 Worker ─────────────────────────
+// 批次辨識時，連續好幾首音檔共用同一個 Worker：模型只需要載入一次。
+// - 辨識成功：Worker 保留著，閒置超過 WORKER_IDLE_MS 才關閉（釋放記憶體）
+// - 取消或出錯：直接關閉（取消運算只能靠關掉 Worker），下一首會重新建立
+// 一次只允許一個辨識在跑，批次佇列（useTranscriptionQueue）會確保這一點。
+
+const WORKER_IDLE_MS = 60 * 1000;
+
+let sharedWorker: Worker | null = null;
+let sharedWorkerWarm = false; // 這個 Worker 已經載入過模型
+let workerBusy = false;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearIdleTimer() {
+  if (idleTimer !== null) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+}
+
+function acquireWorker(): Worker {
+  clearIdleTimer();
+  if (!sharedWorker) {
+    sharedWorker = new Worker(new URL('../workers/whisperWorker.ts', import.meta.url), {
+      type: 'module',
+    });
+    sharedWorkerWarm = false;
+  }
+  return sharedWorker;
+}
+
+function terminateSharedWorker() {
+  clearIdleTimer();
+  if (sharedWorker) {
+    sharedWorker.onmessage = null;
+    sharedWorker.onerror = null;
+    sharedWorker.onmessageerror = null;
+    sharedWorker.terminate();
+    sharedWorker = null;
+  }
+  sharedWorkerWarm = false;
+}
+
+function scheduleIdleShutdown() {
+  clearIdleTimer();
+  idleTimer = setTimeout(terminateSharedWorker, WORKER_IDLE_MS);
+}
+
 /**
  * 在 Web Worker 裡跑 Whisper。
  * 傳入 signal 可以中途取消（會直接 terminate worker）。
@@ -116,26 +173,42 @@ function runWhisperWorker(
       reject(abortError());
       return;
     }
+    if (workerBusy) {
+      reject(new Error('已有另一個辨識正在進行中'));
+      return;
+    }
 
     let worker: Worker;
     try {
-      worker = new Worker(new URL('../workers/whisperWorker.ts', import.meta.url), {
-        type: 'module',
-      });
+      worker = acquireWorker();
     } catch (err: any) {
       console.error('Failed to create Whisper worker:', err);
       reject(new Error(`無法建立 Whisper Worker：${err?.message || String(err)}`));
       return;
     }
+    workerBusy = true;
 
-    const finish = () => {
+    // 這一次辨識結束：拆掉事件監聽（Worker 本身不一定要關）
+    const detach = () => {
       signal?.removeEventListener('abort', handleAbort);
-      worker.terminate();
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.onmessageerror = null;
+      workerBusy = false;
     };
-    const handleAbort = () => {
-      finish();
-      reject(abortError());
+    // 成功：保留 Worker 給下一首用，閒置一陣子才關
+    const succeed = (output: any) => {
+      detach();
+      scheduleIdleShutdown();
+      resolve(output);
     };
+    // 失敗或取消：Worker 的狀態不確定（或必須中斷運算），直接關掉
+    const fail = (error: Error) => {
+      detach();
+      terminateSharedWorker();
+      reject(error);
+    };
+    const handleAbort = () => fail(abortError());
     signal?.addEventListener('abort', handleAbort);
 
     // 模型由好幾個檔案組成，各自回報進度；這裡把它們合計成一條進度條
@@ -172,6 +245,7 @@ function runWhisperWorker(
           });
         }
       } else if (status === 'transcribing') {
+        sharedWorkerWarm = true; // 模型已經載入完成
         onProgress?.({
           stage: 'transcribing',
           message:
@@ -180,11 +254,9 @@ function runWhisperWorker(
               : '正在辨識音檔內容...',
         });
       } else if (status === 'complete') {
-        finish();
-        resolve(output);
+        succeed(output);
       } else if (status === 'error') {
-        finish();
-        reject(new Error(error || 'Whisper 辨識錯誤'));
+        fail(new Error(error || 'Whisper 辨識錯誤'));
       }
     };
 
@@ -197,8 +269,7 @@ function runWhisperWorker(
         lineno: e.lineno,
         colno: e.colno,
       });
-      finish();
-      reject(
+      fail(
         new Error(
           e.message ||
             `Whisper Worker 載入失敗（${
@@ -209,8 +280,7 @@ function runWhisperWorker(
     };
 
     worker.onmessageerror = () => {
-      finish();
-      reject(new Error('Worker 訊息傳遞失敗'));
+      fail(new Error('Worker 訊息傳遞失敗'));
     };
 
     // 用「轉移」而不是「複製」把音訊交給 worker，可以省下一份記憶體
@@ -221,8 +291,7 @@ function runWhisperWorker(
         [audio.buffer]
       );
     } catch (err: any) {
-      finish();
-      reject(new Error(`無法傳送音訊給 Worker：${err?.message || String(err)}`));
+      fail(new Error(`無法傳送音訊給 Worker：${err?.message || String(err)}`));
     }
   });
 }
@@ -484,11 +553,14 @@ export async function transcribeAudioWithWhisper(
 
   if (signal?.aborted) throw abortError();
 
-  onProgress?.({
-    stage: 'downloading',
-    message: `正在準備語音辨識模型（${MODEL_DOWNLOAD_HINT}，首次使用需下載，之後會保存在瀏覽器中）...`,
-    percent: 0,
-  });
+  // 共用的 Worker 已經載入過模型時（批次辨識的第二首以後），不用再顯示「準備模型」
+  if (!sharedWorkerWarm) {
+    onProgress?.({
+      stage: 'downloading',
+      message: `正在準備語音辨識模型（${MODEL_DOWNLOAD_HINT}，首次使用需下載，之後會保存在瀏覽器中）...`,
+      percent: 0,
+    });
+  }
 
   const rawOutput = await runWhisperWorker(audio, language, onProgress, signal);
 

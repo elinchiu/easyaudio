@@ -7,11 +7,35 @@ env.allowLocalModels = false;
 // 注意：這不是離線功能。關掉的話，每次辨識都要重新下載整個模型（數十到數百 MB，依模型而定）。
 env.useBrowserCache = true;
 
-// 模型名稱與語言都由 whisper.ts 傳進來，這裡不寫死，換模型時不用改這個檔案。
-// 語言為 'auto' 或未提供時，由 Whisper 自動偵測。
-self.addEventListener('message', async (event: MessageEvent) => {
-  const { type, audioData, language, model } = event.data || {};
-  if (type !== 'transcribe') return;
+// ───────────────────────── 模型只載入一次 ─────────────────────────
+// whisper.ts 現在會讓同一個 worker 連續處理好幾首音檔（批次辨識），
+// 所以把載入好的 pipeline 留在這裡，第二首之後就不必重新把模型載入記憶體。
+// worker 被 terminate（取消、出錯、閒置太久）時，這些變數會跟著消失，下次會重新載入。
+let loadedModel: string | null = null;
+let transcriberPromise: Promise<any> | null = null;
+
+function getTranscriber(model: string): Promise<any> {
+  if (transcriberPromise && loadedModel === model) return transcriberPromise;
+
+  loadedModel = model;
+  const promise: Promise<any> = pipeline('automatic-speech-recognition', model, {
+    progress_callback: (data: any) => self.postMessage({ status: 'model-progress', data }),
+  });
+  transcriberPromise = promise;
+
+  // 載入失敗就不要留著失敗的結果，下一首重新嘗試
+  promise.catch(() => {
+    if (transcriberPromise === promise) {
+      transcriberPromise = null;
+      loadedModel = null;
+    }
+  });
+
+  return promise;
+}
+
+async function handleTranscribe(data: any) {
+  const { audioData, language, model } = data || {};
 
   try {
     if (!model) throw new Error('沒有指定 Whisper 模型');
@@ -19,11 +43,7 @@ self.addEventListener('message', async (event: MessageEvent) => {
       throw new Error('沒有收到音訊資料');
     }
 
-    // whisper.ts 每次辨識完都會把這個 worker 關掉（terminate），
-    // 所以這裡不需要保存 pipeline；模型檔已存在瀏覽器 Cache，重新載入會比較快。
-    const transcriber: any = await pipeline('automatic-speech-recognition', model, {
-      progress_callback: (data: any) => self.postMessage({ status: 'model-progress', data }),
-    });
+    const transcriber = await getTranscriber(model);
 
     self.postMessage({ status: 'transcribing' });
 
@@ -46,4 +66,12 @@ self.addEventListener('message', async (event: MessageEvent) => {
     console.error('[Whisper Worker Error]', err);
     self.postMessage({ status: 'error', error: err?.message || String(err) });
   }
+}
+
+// 訊息一律排隊、一次處理一個。handleTranscribe 內部已經接住所有錯誤，所以這條鏈不會中斷。
+let chain: Promise<void> = Promise.resolve();
+
+self.addEventListener('message', (event: MessageEvent) => {
+  if (event.data?.type !== 'transcribe') return;
+  chain = chain.then(() => handleTranscribe(event.data));
 });

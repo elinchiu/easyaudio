@@ -219,11 +219,11 @@ export const AudioPlayerBar: React.FC<Props> = ({
                       e.stopPropagation();
                       onOpenTranscript();
                     }}
-                    className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-2xs"
-                    title="開啟音檔文字（Whisper 德文語音辨識 / 字幕）"
+                    className="shrink-0 inline-flex items-center justify-center p-1.5 rounded-lg bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-2xs"
+                    title="音檔文字（開啟 / 收起）"
+                    aria-label="音檔文字"
                   >
-                    <FileText className="w-3 h-3 text-[#36415A]" />
-                    <span>Script</span>
+                    <FileText className="w-3.5 h-3.5 text-[#36415A]" />
                   </button>
                 )}
               </div>

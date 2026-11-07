@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioTrack } from './types/track';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
+import { useTranscriptionQueue } from './hooks/useTranscriptionQueue';
 import { fetchFolderAudioTracks, extractFolderId } from './lib/driveApi';
 import { googleSignIn, initAuth } from './lib/firebase';
 
@@ -25,6 +26,14 @@ import {
 } from 'lucide-react';
 
 const DURATION_CACHE_KEY = 'tb_track_durations';
+
+/**
+ * 匯入資料夾後，是否自動在背景辨識裡面所有還沒有文字的音檔。
+ * 第一次使用會自動下載語音辨識模型（約 250–290MB），而且辨識很吃 CPU：
+ * 手機上可能耗電、發燙，音檔很多時甚至會影響播放順暢度。
+ * 不想自動跑就改成 false（之後仍可在文字面板裡按「開始辨識」手動辨識單一首）。
+ */
+const AUTO_TRANSCRIBE_ON_IMPORT = true;
 
 export default function App() {
   // 每次載入／重整都從空白開始：不從 localStorage 還原資料夾與歌單
@@ -94,6 +103,16 @@ export default function App() {
 
   // Audio player hook with accessToken
   const player = useAudioPlayer(accessToken, handleAuthorize);
+
+  // 語音辨識佇列：一次辨識一首，其餘排隊；放在這裡，文字面板關著時也會在背景繼續跑
+  const queue = useTranscriptionQueue({ getTrackAudioBlob: player.getTrackAudioBlob });
+
+  // 開始播放某一首時，如果它還在排隊，就讓它插隊到最前面（這樣最快看到文字）
+  const currentTrackId = player.currentTrack?.id;
+  const prioritizeIfQueued = queue.prioritizeIfQueued;
+  useEffect(() => {
+    if (currentTrackId) prioritizeIfQueued(currentTrackId);
+  }, [currentTrackId, prioritizeIfQueued]);
 
   // 播放時記錄目前這首的時長
   useEffect(() => {
@@ -171,6 +190,11 @@ export default function App() {
         setTracks(result.tracks);
         player.setPlaylist(result.tracks);
 
+        // 把資料夾裡還沒有文字的音檔排進背景辨識佇列。
+        // replace：換了另一個資料夾時，舊資料夾還在排隊的音檔會被移除；
+        // 重新整理同一個資料夾則不會中斷正在跑的辨識。
+        queue.enqueue(AUTO_TRANSCRIBE_ON_IMPORT ? result.tracks : [], { replace: true });
+
         if (trackToPlayAfter) {
           // Play the requested track right away
           const matched = result.tracks.find(t => t.id === trackToPlayAfter.id) || trackToPlayAfter;
@@ -186,7 +210,7 @@ export default function App() {
         setIsLoadingFolder(false);
       }
     },
-    [accessToken, player]
+    [accessToken, player, queue.enqueue]
   );
 
   // 按「匯入」：載入貼上的資料夾連結
@@ -247,7 +271,11 @@ export default function App() {
   }, [player]);
 
   return (
-    <div className="min-h-screen bg-white text-[#36415A] font-light flex flex-col selection:bg-[#36415A] selection:text-[#E0F8C7]">
+    <div
+      className={`min-h-screen bg-white text-[#36415A] font-light flex flex-col selection:bg-[#36415A] selection:text-[#E0F8C7] transition-[padding] duration-200 ${
+        isTranscriptModalOpen ? 'lg:pr-[420px]' : ''
+      }`}
+    >
       {/* Main Navigation Header (Light Theme) */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -421,18 +449,17 @@ export default function App() {
         onSetPointB={player.setPointB}
         onClearAB={player.clearABRepeat}
         onAuthorizeGoogle={() => handleAuthorize()}
-        onOpenTranscript={() => setIsTranscriptModalOpen(true)}
+        onOpenTranscript={() => setIsTranscriptModalOpen((open) => !open)}
       />
 
-      {/* 音檔文字視窗（Whisper 多語言自動偵測 / 逐句對照） */}
+      {/* 音檔文字面板（固定在畫面右側；辨識由 queue 在背景進行） */}
       <TranscriptModal
         isOpen={isTranscriptModalOpen}
         onClose={() => setIsTranscriptModalOpen(false)}
         currentTrack={player.currentTrack}
         currentTime={player.currentTime}
-        duration={player.duration}
         onSeek={player.seek}
-        getAudioBlob={player.getCurrentAudioBlob}
+        queue={queue}
       />
 
       {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}
