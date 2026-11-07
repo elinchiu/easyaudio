@@ -31,6 +31,24 @@ const formatTime = (seconds: number): string => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
+// 桌面版 = md（768px）以上，也就是底部播放列右側有完整控制（速度、A-B、音量）的版面。
+// 這個寬度以上不需要全螢幕展開畫面。要改斷點時，記得和下面的 md: 樣式一起改。
+const DESKTOP_QUERY = '(min-width: 768px)';
+
+function useIsDesktop(): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
+
+  useEffect(() => {
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
+  return matches;
+}
+
 // 圓形箭頭圖示，秒數文字放在圓圈正中間
 const SkipIcon: React.FC<{
   direction: 'back' | 'forward';
@@ -113,6 +131,17 @@ export const AudioPlayerBar: React.FC<Props> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const isDesktop = useIsDesktop();
+
+  // 視窗變寬成桌面版時，如果全螢幕畫面剛好開著，自動收起來
+  useEffect(() => {
+    if (isDesktop) setIsExpanded(false);
+  }, [isDesktop]);
+
+  // 全螢幕展開畫面只有手機版有；桌面版點封面或曲名不會有任何反應
+  const toggleExpanded = () => {
+    if (!isDesktop) setIsExpanded((open) => !open);
+  };
 
   // 已移除循環按鈕：固定為「播完最後一首就停止」（normal）
   useEffect(() => {
@@ -188,13 +217,15 @@ export const AudioPlayerBar: React.FC<Props> = ({
         <div className="max-w-7xl mx-auto px-4 py-2.5 sm:py-3 grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 safe-bottom text-slate-800">
           {/* 左：曲目資訊 */}
           <div className="flex items-center gap-3 min-w-0">
+            {/* 手機：點封面展開全螢幕畫面；桌面：只是顯示用的圖示 */}
             <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 text-indigo-600 group relative overflow-hidden shadow-sm"
-              title="展開詳細播放控制"
+              onClick={toggleExpanded}
+              tabIndex={isDesktop ? -1 : 0}
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 text-indigo-600 group relative overflow-hidden shadow-sm md:pointer-events-none"
+              title={isDesktop ? undefined : '展開詳細播放控制'}
             >
               <Disc className={`w-5 h-5 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '4s' }} />
-              <div className="absolute inset-0 bg-indigo-600/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="md:hidden absolute inset-0 bg-indigo-600/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                 {isExpanded ? (
                   <ChevronDown className="w-4 h-4 text-indigo-700" />
                 ) : (
@@ -206,8 +237,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 min-w-0">
                 <div
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  className="text-xs sm:text-sm font-bold text-slate-800 truncate cursor-pointer hover:text-indigo-600 transition-colors"
+                  onClick={toggleExpanded}
+                  className="text-xs sm:text-sm font-bold text-slate-800 truncate cursor-pointer md:cursor-default hover:text-indigo-600 md:hover:text-slate-800 transition-colors"
                   title={currentTrack.name}
                 >
                   {currentTrack.name}
@@ -386,8 +417,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
         )}
       </div>
 
-      {/* 全螢幕展開畫面（手機） */}
-      {isExpanded && (
+      {/* 全螢幕展開畫面（只有手機版；桌面版不顯示） */}
+      {isExpanded && !isDesktop && (
         <div className="fixed inset-0 z-50 bg-white/98 backdrop-blur-2xl flex flex-col justify-between p-6 animate-in slide-in-from-bottom duration-200 text-slate-800">
           <div className="flex items-center justify-between">
             <button

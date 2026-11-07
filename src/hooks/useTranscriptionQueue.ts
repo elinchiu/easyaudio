@@ -11,6 +11,9 @@ import {
 /**
  * 語音辨識佇列：一次只辨識一首，其餘排隊。
  * 放在 App 最上層使用，所以就算文字面板關著，辨識也會在背景繼續跑。
+ *
+ * 批次辨識從「使用者開始播放的那一首」往後排（startFrom），
+ * 而不是從資料夾的第一首開始：使用者通常是接著聽下去，需要文字的是他正在聽的那一首之後。
  */
 
 export type TrackJobStatus = 'idle' | 'queued' | 'running' | 'error';
@@ -30,8 +33,6 @@ export interface BatchStats {
 export interface EnqueueOptions {
   /** true：排到最前面（使用者手動要求辨識這一首時用） */
   priority?: boolean;
-  /** true：把「不在這份清單裡」的排隊項目移除；正在辨識的若不在清單裡也會中止（匯入新資料夾時用） */
-  replace?: boolean;
 }
 
 interface Params {
@@ -57,6 +58,9 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
   const lastProgressKeyRef = useRef('');
   // 辨識結果也留一份在記憶體：就算 localStorage 滿了存不進去，這次開著的期間仍看得到
   const resultsRef = useRef<Map<string, TrackTranscript>>(new Map());
+  // errors 的最新值（startFrom 要讀，但又不想因為 errors 變動而讓 startFrom 變成新函式）
+  const errorsRef = useRef(errors);
+  errorsRef.current = errors;
 
   const getBlobRef = useRef(getTrackAudioBlob);
   useEffect(() => {
@@ -165,18 +169,7 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
   /** 把音檔加進辨識佇列。已經有文字的、已經在排隊或正在辨識的會自動略過。 */
   const enqueue = useCallback(
     (tracks: AudioTrack[], options: EnqueueOptions = {}) => {
-      const { priority = false, replace = false } = options;
-
-      if (replace) {
-        const keep = new Set(tracks.map((t) => t.id));
-        const before = waitingRef.current.length;
-        waitingRef.current = waitingRef.current.filter((t) => keep.has(t.id));
-        const removed = before - waitingRef.current.length;
-        if (removed > 0) shrinkTotal(removed);
-        if (currentIdRef.current && !keep.has(currentIdRef.current)) {
-          controllerRef.current?.abort();
-        }
-      }
+      const { priority = false } = options;
 
       // 佇列是不是空的：空的話，這是一批新的辨識，統計數字從 0 開始
       const wasIdle = !pumpingRef.current && waitingRef.current.length === 0;
@@ -224,7 +217,48 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
       syncQueued();
       void pump();
     },
-    [pump, syncQueued, shrinkTotal]
+    [pump, syncQueued]
+  );
+
+  /**
+   * 從「使用者正在播放的這一首」開始，往後把還沒有文字的音檔排進佇列，並排在最前面。
+   * - 第一次播放：佇列是空的，就從這一首開始一路排到清單最後。
+   * - 中途跳到別首（往前或往後）：這一首和它後面的音檔會插隊到最前面，原本排隊的往後挪。
+   * - 順著播下一首：這些音檔本來就在佇列裡，順序不變，不會有影響。
+   * - 之前辨識失敗的音檔不會被自動重試（除了使用者正在播放的這一首）。
+   */
+  const startFrom = useCallback(
+    (playlist: AudioTrack[], trackId: string) => {
+      const index = playlist.findIndex((t) => t.id === trackId);
+      if (index < 0) return;
+      const list = playlist
+        .slice(index)
+        .filter((t, i) => i === 0 || !errorsRef.current[t.id]);
+      enqueue(list, { priority: true });
+    },
+    [enqueue]
+  );
+
+  /**
+   * 只保留這份清單裡的音檔：其他排隊中的移除，正在辨識但不在清單裡的中止。
+   * 不會新增任何項目。匯入或重新整理資料夾時用：
+   * 換了另一個資料夾，舊資料夾的排隊項目會被清掉；重新整理同一個資料夾則不會中斷正在跑的辨識。
+   */
+  const retainOnly = useCallback(
+    (tracks: AudioTrack[]) => {
+      const keep = new Set(tracks.map((t) => t.id));
+      const before = waitingRef.current.length;
+      waitingRef.current = waitingRef.current.filter((t) => keep.has(t.id));
+      const removed = before - waitingRef.current.length;
+      if (removed > 0) {
+        shrinkTotal(removed);
+        syncQueued();
+      }
+      if (currentIdRef.current && !keep.has(currentIdRef.current)) {
+        controllerRef.current?.abort();
+      }
+    },
+    [shrinkTotal, syncQueued]
   );
 
   /** 取消某一首：正在辨識的會中止（佇列繼續下一首），排隊中的會被移除 */
@@ -253,7 +287,7 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
     controllerRef.current?.abort();
   }, [shrinkTotal, syncQueued]);
 
-  /** 如果這首還在排隊，就把它移到最前面（使用者開始播放它時用） */
+  /** 如果這首還在排隊，就把它移到最前面（自動辨識關閉時，使用者開始播放它用） */
   const prioritizeIfQueued = useCallback(
     (id: string) => {
       const index = waitingRef.current.findIndex((t) => t.id === id);
@@ -295,6 +329,8 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
     statusOf,
     getTranscript,
     enqueue,
+    startFrom,
+    retainOnly,
     cancelTrack,
     cancelAll,
     prioritizeIfQueued,

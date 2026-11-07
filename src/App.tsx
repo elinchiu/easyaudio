@@ -14,7 +14,11 @@ import { googleSignIn, initAuth } from './lib/firebase';
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
 import { GoogleAuthModal } from './components/GoogleAuthModal';
-import { TranscriptModal } from './components/TranscriptModal';
+import {
+  TranscriptModal,
+  TRANSCRIPT_PANEL_DEFAULT_WIDTH,
+  clampTranscriptWidth,
+} from './components/TranscriptModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 
 import { 
@@ -26,20 +30,26 @@ import {
 } from 'lucide-react';
 
 const DURATION_CACHE_KEY = 'tb_track_durations';
+const TRANSCRIPT_WIDTH_KEY = 'tb_transcript_width';
 
 /**
- * 匯入資料夾後，是否自動在背景辨識裡面所有還沒有文字的音檔。
+ * 使用者開始播放某一首時，是否自動從「這一首」開始，往後把還沒有文字的音檔排進背景辨識。
+ * 匯入資料夾本身不會觸發辨識：使用者不一定從第一首聽起，所以等他選了要播的那一首再開始。
  * 第一次使用會自動下載語音辨識模型（約 250–290MB），而且辨識很吃 CPU：
  * 手機上可能耗電、發燙，音檔很多時甚至會影響播放順暢度。
  * 不想自動跑就改成 false（之後仍可在文字面板裡按「開始辨識」手動辨識單一首）。
  */
-const AUTO_TRANSCRIBE_ON_IMPORT = true;
+const AUTO_TRANSCRIBE_ON_PLAY = true;
 
 export default function App() {
   // 每次載入／重整都從空白開始：不從 localStorage 還原資料夾與歌單
   const [folderUrl, setFolderUrl] = useState<string>('');
   const [folderName, setFolderName] = useState<string>('File Name');
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
+
+  // 讓 effect 讀得到最新的歌單，又不會因為歌單重新載入而重跑
+  const tracksRef = useRef<AudioTrack[]>(tracks);
+  tracksRef.current = tracks;
 
   const [isLoadingFolder, setIsLoadingFolder] = useState<boolean>(false);
   const [folderError, setFolderError] = useState<string | null>(null);
@@ -66,6 +76,26 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
   const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
+
+  // 桌面版文字面板的寬度（使用者可以拖曳調整），以及是否正在拖曳
+  const [transcriptWidth, setTranscriptWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(TRANSCRIPT_WIDTH_KEY));
+      if (saved > 0) return clampTranscriptWidth(saved);
+    } catch {
+      // ignore
+    }
+    return TRANSCRIPT_PANEL_DEFAULT_WIDTH;
+  });
+  const [isResizingPanel, setIsResizingPanel] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TRANSCRIPT_WIDTH_KEY, String(transcriptWidth));
+    } catch {
+      // ignore
+    }
+  }, [transcriptWidth]);
 
   // 清掉舊版本殘留在瀏覽器裡的資料夾／歌單快取（只跑一次）
   useEffect(() => {
@@ -107,12 +137,16 @@ export default function App() {
   // 語音辨識佇列：一次辨識一首，其餘排隊；放在這裡，文字面板關著時也會在背景繼續跑
   const queue = useTranscriptionQueue({ getTrackAudioBlob: player.getTrackAudioBlob });
 
-  // 開始播放某一首時，如果它還在排隊，就讓它插隊到最前面（這樣最快看到文字）
+  // 使用者開始播放某一首（或切到另一首）時：
+  // - 自動辨識開啟：從這一首開始，往後把還沒有文字的音檔排到佇列最前面
+  // - 自動辨識關閉：如果這首剛好還在排隊（例如手動排的），就讓它插隊到最前面
   const currentTrackId = player.currentTrack?.id;
-  const prioritizeIfQueued = queue.prioritizeIfQueued;
+  const { startFrom, prioritizeIfQueued } = queue;
   useEffect(() => {
-    if (currentTrackId) prioritizeIfQueued(currentTrackId);
-  }, [currentTrackId, prioritizeIfQueued]);
+    if (!currentTrackId) return;
+    if (AUTO_TRANSCRIBE_ON_PLAY) startFrom(tracksRef.current, currentTrackId);
+    else prioritizeIfQueued(currentTrackId);
+  }, [currentTrackId, startFrom, prioritizeIfQueued]);
 
   // 播放時記錄目前這首的時長
   useEffect(() => {
@@ -190,10 +224,10 @@ export default function App() {
         setTracks(result.tracks);
         player.setPlaylist(result.tracks);
 
-        // 把資料夾裡還沒有文字的音檔排進背景辨識佇列。
-        // replace：換了另一個資料夾時，舊資料夾還在排隊的音檔會被移除；
+        // 匯入不會自動開始辨識（等使用者播放某一首再從那裡開始）。
+        // 這裡只清理佇列：換了另一個資料夾時，舊資料夾還在排隊的音檔會被移除；
         // 重新整理同一個資料夾則不會中斷正在跑的辨識。
-        queue.enqueue(AUTO_TRANSCRIBE_ON_IMPORT ? result.tracks : [], { replace: true });
+        queue.retainOnly(result.tracks);
 
         if (trackToPlayAfter) {
           // Play the requested track right away
@@ -210,7 +244,7 @@ export default function App() {
         setIsLoadingFolder(false);
       }
     },
-    [accessToken, player, queue.enqueue]
+    [accessToken, player, queue.retainOnly]
   );
 
   // 按「匯入」：載入貼上的資料夾連結
@@ -272,9 +306,12 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen bg-white text-[#36415A] font-light flex flex-col selection:bg-[#36415A] selection:text-[#E0F8C7] transition-[padding] duration-200 ${
-        isTranscriptModalOpen ? 'lg:pr-[420px]' : ''
-      }`}
+      // --transcript-w：文字面板寬度，面板本身（寬度）與這裡（讓出右側空間）共用同一個值
+      style={{ ['--transcript-w' as any]: `${transcriptWidth}px` }}
+      className={`min-h-screen bg-white text-[#36415A] font-light flex flex-col selection:bg-[#36415A] selection:text-[#E0F8C7] ${
+        // 拖曳調整寬度時關掉動畫，主畫面才跟得上滑鼠
+        isResizingPanel ? '' : 'transition-[padding] duration-200'
+      } ${isTranscriptModalOpen ? 'lg:pr-[var(--transcript-w)]' : ''}`}
     >
       {/* Main Navigation Header (Light Theme) */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
@@ -452,7 +489,7 @@ export default function App() {
         onOpenTranscript={() => setIsTranscriptModalOpen((open) => !open)}
       />
 
-      {/* 音檔文字面板（固定在畫面右側；辨識由 queue 在背景進行） */}
+      {/* 音檔文字面板（固定在畫面右側；辨識由 queue 在背景進行；桌面版可拖曳調整寬度） */}
       <TranscriptModal
         isOpen={isTranscriptModalOpen}
         onClose={() => setIsTranscriptModalOpen(false)}
@@ -460,6 +497,9 @@ export default function App() {
         currentTime={player.currentTime}
         onSeek={player.seek}
         queue={queue}
+        width={transcriptWidth}
+        onWidthChange={setTranscriptWidth}
+        onResizingChange={setIsResizingPanel}
       />
 
       {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}

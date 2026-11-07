@@ -19,6 +19,24 @@ interface Props {
   onSeek: (time: number) => void;
   /** 語音辨識佇列（由 App 最上層建立；面板關著時辨識也會在背景繼續） */
   queue: TranscriptionQueue;
+  /** 桌面版面板寬度（px）。由 App 保管，這樣主畫面才能跟著讓出對應的空間 */
+  width: number;
+  onWidthChange: (width: number) => void;
+  /** 拖曳開始／結束時通知 App（拖曳中 App 會暫時關掉 padding 動畫，才不會延遲） */
+  onResizingChange?: (resizing: boolean) => void;
+}
+
+export const TRANSCRIPT_PANEL_DEFAULT_WIDTH = 420;
+export const TRANSCRIPT_PANEL_MIN_WIDTH = 320;
+const TRANSCRIPT_PANEL_MAX_WIDTH = 800;
+
+/** 寬度限制在 320px ～ min(800px, 視窗寬度的 60%) 之間 */
+export function clampTranscriptWidth(w: number): number {
+  const max = Math.max(
+    TRANSCRIPT_PANEL_MIN_WIDTH,
+    Math.min(TRANSCRIPT_PANEL_MAX_WIDTH, window.innerWidth * 0.6)
+  );
+  return Math.round(Math.min(Math.max(w, TRANSCRIPT_PANEL_MIN_WIDTH), max));
 }
 
 function formatTime(seconds: number): string {
@@ -35,6 +53,9 @@ export const TranscriptModal: React.FC<Props> = ({
   currentTime,
   onSeek,
   queue,
+  width,
+  onWidthChange,
+  onResizingChange,
 }) => {
   const trackId = currentTrack?.id ?? null;
 
@@ -42,6 +63,59 @@ export const TranscriptModal: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const activeSegmentRef = useRef<HTMLDivElement | null>(null);
+  const draggingRef = useRef(false);
+
+  // 元件被移除時，確保拖曳中設定的游標與選取樣式被還原
+  useEffect(
+    () => () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    },
+    []
+  );
+
+  // ── 拖曳左邊緣調整寬度（只有桌面版有這條拖曳把手） ──
+  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId); // 滑鼠移出把手也能繼續拖
+    draggingRef.current = true;
+    onResizingChange?.(true);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  };
+
+  const handleResizePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    // 面板貼在右邊，所以寬度 = 視窗寬度 - 滑鼠的 X 位置
+    onWidthChange(clampTranscriptWidth(window.innerWidth - e.clientX));
+  };
+
+  const endResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    onResizingChange?.(false);
+  };
+
+  // 鍵盤也能調整：把手聚焦後按 ←（變寬）/ →（變窄），Home 重設
+  const handleResizeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      onWidthChange(clampTranscriptWidth(width + 24));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      onWidthChange(clampTranscriptWidth(width - 24));
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      onWidthChange(TRANSCRIPT_PANEL_DEFAULT_WIDTH);
+    }
+  };
 
   // 面板開啟時，按 Escape 關閉；面板關閉或元件卸載時移除監聽
   useEffect(() => {
@@ -109,11 +183,35 @@ export const TranscriptModal: React.FC<Props> = ({
   return (
     // 固定在畫面右側的面板（不是彈跳視窗，沒有遮罩，後面的畫面仍可操作）
     // bottom-24：留出底部播放器的高度，如果播放器高度不同，改這個數字
-    // lg 以上固定 420px 寬（App.tsx 會同步把主畫面往左推）；小螢幕則滿版蓋在上面
+    // lg 以上寬度由 CSS 變數 --transcript-w 決定（App.tsx 設定，並同步把主畫面往左推）；
+    // 使用者可以拖曳左邊緣調整。小螢幕則滿版蓋在上面
     <aside
       aria-label="音檔文字"
-      className="fixed top-0 right-0 bottom-24 z-30 w-full lg:w-[420px] bg-white border-l border-slate-200 shadow-xl flex flex-col text-slate-800"
+      className="fixed top-0 right-0 bottom-24 z-30 w-full lg:w-[var(--transcript-w)] bg-white border-l border-slate-200 shadow-xl flex flex-col text-slate-800"
     >
+      {/* 拖曳把手：只在桌面版顯示，雙擊恢復預設寬度 */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="調整文字面板寬度"
+        aria-valuenow={width}
+        aria-valuemin={TRANSCRIPT_PANEL_MIN_WIDTH}
+        aria-valuemax={TRANSCRIPT_PANEL_MAX_WIDTH}
+        tabIndex={0}
+        title="拖曳調整寬度（雙擊恢復預設）"
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+        onLostPointerCapture={endResize}
+        onDoubleClick={() => onWidthChange(TRANSCRIPT_PANEL_DEFAULT_WIDTH)}
+        onKeyDown={handleResizeKeyDown}
+        className="group hidden lg:flex absolute top-0 bottom-0 -left-1.5 w-3 z-10 items-center justify-center cursor-col-resize touch-none outline-none"
+      >
+        <div className="h-full w-0.5 bg-transparent group-hover:bg-[#BFE0A3] group-focus-visible:bg-[#BFE0A3] group-active:bg-[#36415A] transition-colors" />
+        <div className="absolute top-1/2 -translate-y-1/2 h-10 w-1.5 rounded-full bg-slate-300 group-hover:bg-[#36415A] group-active:bg-[#36415A] transition-colors" />
+      </div>
+
       {/* Header */}
       <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-white">
         <div className="flex items-center gap-2.5 min-w-0">
