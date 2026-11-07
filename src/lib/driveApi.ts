@@ -217,9 +217,7 @@ export async function fetchFolderAudioTracks(
   // 否則畫面會顯示「成功匯入 0 首」，使用者完全不知道原因。
   if (metaStatus === 404) {
     if (!accessToken) {
-      throw new AuthRequiredError(
-        '這個資料夾不是公開的（或網址有誤）。若是私人資料夾，請先登入 Google。'
-      );
+      throw new AuthRequiredError('這個資料夾不是公開的（或網址有誤）。');
     }
     throw new Error('找不到此資料夾，請確認網址是否正確，以及目前登入的 Google 帳號有權限存取。');
   }
