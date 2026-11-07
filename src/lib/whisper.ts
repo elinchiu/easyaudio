@@ -293,8 +293,69 @@ function splitIntoSentenceSpans(text: string): { start: number; end: number }[] 
   return spans;
 }
 
+// ───────────────────── 靜音偵測 ─────────────────────
+// Whisper 的時間只到「段落」層級，看不到段落「裡面」的長空檔。
+// 所以直接分析音檔的音量：找出夠長的安靜區間，用它來
+//   1. 把中間有長空檔的句子切成兩段（空檔後的內容是新的一段）
+//   2. 把每句的開始／結束時間貼齊到真正開口、收聲的位置
+// 這些只靠音量判斷，跟模型無關。
+
+interface SilenceRange {
+  start: number;
+  end: number;
+}
+
+// 安靜超過這麼久，才算「很長的空檔」。覺得切太碎就調大（例如 2），切不夠就調小（例如 0.8）
+const MIN_SILENCE_SECONDS = 1.2;
+
+function findSilences(audio: Float32Array, sampleRate = 16000): SilenceRange[] {
+  const frameSeconds = 0.05;
+  const frameSize = Math.round(sampleRate * frameSeconds);
+  const frameCount = Math.floor(audio.length / frameSize);
+  if (frameCount < 10) return [];
+
+  // 每 50 毫秒算一次音量（RMS）
+  const rms = new Float32Array(frameCount);
+  for (let f = 0; f < frameCount; f++) {
+    let sum = 0;
+    const offset = f * frameSize;
+    for (let i = 0; i < frameSize; i++) {
+      const v = audio[offset + i];
+      sum += v * v;
+    }
+    rms[f] = Math.sqrt(sum / frameSize);
+  }
+
+  // 門檻依這個音檔自己的音量決定：底噪 + 說話音量與底噪差距的 10%
+  const sorted = Array.from(rms).sort((a, b) => a - b);
+  const floor = sorted[Math.floor(frameCount * 0.05)];
+  const speech = sorted[Math.floor(frameCount * 0.9)];
+  if (speech < 0.001) return []; // 整段幾乎沒聲音，無從判斷
+  const threshold = floor + (speech - floor) * 0.1;
+
+  const minFrames = Math.ceil(MIN_SILENCE_SECONDS / frameSeconds);
+  const silences: SilenceRange[] = [];
+  let runStart = -1;
+  for (let f = 0; f <= frameCount; f++) {
+    const silent = f < frameCount && rms[f] < threshold;
+    if (silent && runStart < 0) {
+      runStart = f;
+    } else if (!silent && runStart >= 0) {
+      if (f - runStart >= minFrames) {
+        silences.push({ start: runStart * frameSeconds, end: f * frameSeconds });
+      }
+      runStart = -1;
+    }
+  }
+  return silences;
+}
+
 /** 把 Whisper 的段落重新整理成「一句一行 + 起訖秒數」 */
-function buildSentenceSegments(rawChunks: any[], audioSeconds: number): TranscriptSegment[] {
+function buildSentenceSegments(
+  rawChunks: any[],
+  audioSeconds: number,
+  silences: SilenceRange[] = []
+): TranscriptSegment[] {
   // 1. 整理每個段落的時間
   const chunks: { text: string; start: number; end: number }[] = [];
   for (const c of rawChunks) {
@@ -334,16 +395,67 @@ function buildSentenceSegments(rawChunks: any[], audioSeconds: number): Transcri
     return spans[spans.length - 1].end;
   };
 
+  // 3b. 秒數 → 字元位置（反向換算）：某個時間點大約對應文字的哪裡
+  const charAt = (t: number): number => {
+    for (const s of spans) {
+      if (t < s.start) return s.charStart; // 落在兩個段落之間的空檔：文字邊界就是下一段的開頭
+      if (t <= s.end) {
+        const ratio = (t - s.start) / Math.max(0.001, s.end - s.start);
+        return Math.round(s.charStart + ratio * (s.charEnd - s.charStart));
+      }
+    }
+    return combined.length;
+  };
+
+  // 把位置挪到最近的空白，避免把單字切成兩半；找不到回傳 -1
+  const snapToSpace = (pos: number, lo: number, hi: number): number => {
+    for (let d = 0; d <= 20; d++) {
+      for (const p of [pos - d, pos + d]) {
+        if (p > lo && p < hi && combined[p] === ' ') return p;
+      }
+    }
+    return -1;
+  };
+
   // 4. 切句，並確保時間由小到大、不超過音檔長度
   const limit = audioSeconds > 0 ? audioSeconds : Infinity;
   const round = (n: number) => Math.round(n * 100) / 100;
   const segments: TranscriptSegment[] = [];
 
   for (const { start: cs, end: ce } of splitIntoSentenceSpans(combined)) {
-    const prevStart = segments.length ? segments[segments.length - 1].start : 0;
-    const start = Math.min(Math.max(timeAt(cs), prevStart), limit);
-    const end = Math.min(Math.max(timeAt(ce), start), limit);
-    segments.push({ id: segments.length + 1, start: round(start), end: round(end), text: combined.slice(cs, ce) });
+    const sentStart = Math.min(timeAt(cs), limit);
+    const sentEnd = Math.min(Math.max(timeAt(ce), sentStart), limit);
+
+    // 句子中間如果有很長的靜音，就在那裡切開：空檔後面的內容是新的一段
+    const cuts: { pos: number; silence: SilenceRange }[] = [];
+    let lastPos = cs;
+    for (const sil of silences) {
+      if (sil.start <= sentStart + 0.3 || sil.end >= sentEnd - 0.3) continue; // 只處理句子「中間」的空檔
+      const pos = snapToSpace(charAt((sil.start + sil.end) / 2), lastPos, ce);
+      if (pos < 0) continue;
+      cuts.push({ pos, silence: sil });
+      lastPos = pos;
+    }
+
+    const bounds = [cs, ...cuts.map((c) => c.pos), ce];
+    for (let k = 0; k < bounds.length - 1; k++) {
+      const text = combined.slice(bounds[k], bounds[k + 1]).trim();
+      if (!text) continue;
+
+      let start = k === 0 ? sentStart : cuts[k - 1].silence.end;
+      let end = k === bounds.length - 2 ? sentEnd : cuts[k].silence.start;
+
+      // 貼齊真正開口、收聲的位置：開頭落在靜音裡就移到靜音結束，結尾同理
+      const lead = silences.find((s) => s.start <= start + 0.5 && s.end > start && s.end < end);
+      if (lead) start = lead.end;
+      const trail = silences.find((s) => s.end >= end - 0.5 && s.start < end && s.start > start);
+      if (trail) end = trail.start;
+
+      const prevStart = segments.length ? segments[segments.length - 1].start : 0;
+      start = Math.min(Math.max(start, prevStart), limit);
+      end = Math.min(Math.max(end, start), limit);
+      segments.push({ id: segments.length + 1, start: round(start), end: round(end), text });
+    }
   }
   return segments;
 }
@@ -368,6 +480,7 @@ export async function transcribeAudioWithWhisper(
     throw new Error('音檔解碼後是空的，無法辨識。');
   }
   const audioSeconds = audio.length / 16000; // 要在轉移給 worker 之前先算好長度
+  const silences = findSilences(audio); // 同理，轉移之後 audio 就是空的，要先分析好靜音位置
 
   if (signal?.aborted) throw abortError();
 
@@ -381,12 +494,12 @@ export async function transcribeAudioWithWhisper(
 
   // 把 Whisper 的輸出重新斷句成「一句一行 + 起訖秒數」
   const rawChunks = Array.isArray(rawOutput?.chunks) ? rawOutput.chunks : [];
-  let segments = buildSentenceSegments(rawChunks, audioSeconds);
+  let segments = buildSentenceSegments(rawChunks, audioSeconds, silences);
 
   // 沒有逐段時間、只有整段文字：把它當成涵蓋整首的一段，再依標點切句、按字數分配時間
   const rawText = (rawOutput?.text || '').trim();
   if (segments.length === 0 && rawText) {
-    segments = buildSentenceSegments([{ text: rawText, timestamp: [0, audioSeconds] }], audioSeconds);
+    segments = buildSentenceSegments([{ text: rawText, timestamp: [0, audioSeconds] }], audioSeconds, silences);
   }
 
   // 純文字檢視、複製、下載 .txt 都用這個：一句一行

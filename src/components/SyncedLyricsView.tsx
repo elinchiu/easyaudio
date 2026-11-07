@@ -347,7 +347,7 @@ export const SyncedLyricsView: React.FC<Props> = ({
               <div className="space-y-1">
                 <h4 className="text-lg font-bold text-[#36415A]">目前音檔尚無即時文字</h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  點擊下方按鈕，在瀏覽器本機內執行 Whisper 語音辨識模型，將德文音檔轉錄為即時字幕，無須使用雲端 AI，兼顧隱私與穩定！
+                  點擊下方按鈕，在瀏覽器本機內執行語言辨識，將音檔轉錄為即時字幕，無須使用雲端 AI，兼顧隱私與穩定！
                 </p>
               </div>
 

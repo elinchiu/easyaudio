@@ -425,7 +425,7 @@ export const TranscriptModal: React.FC<Props> = ({
 
         {/* Footer info */}
         <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
-          <span>點擊任意句子或時間標記即可直接跳轉播放</span>
+          <span>點擊任意句子即可直接跳轉</span>
           <span>{transcript ? `共 ${transcript.segments.length} 個語句段落` : 'Whisper 語音辨識'}</span>
         </div>
       </div>
