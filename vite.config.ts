@@ -19,7 +19,7 @@ export default defineConfig(() => {
           id: '/easyaudio/',
           name: 'Easy Audio - 播放音檔不卡卡',
           short_name: 'Easy Audio',
-          description: '取代 Google Drive 音檔播放器的好工具',
+          description: '播放 Google Drive 音檔的好工具',
           theme_color: '#ffffff',
           background_color: '#ffffff',
           display: 'standalone',
