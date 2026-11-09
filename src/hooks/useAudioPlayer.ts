@@ -162,10 +162,7 @@ export function useAudioPlayer(accessToken?: string | null) {
             title: track.name,
             artist: 'Easy Audio',
             album: 'Easy Audio',
-            artwork: [
-              { src: icon('pwa-192x192.png'), sizes: '192x192', type: 'image/png' },
-              { src: icon('pwa-512x512.png'), sizes: '512x512', type: 'image/png' },
-            ],
+            artwork: [{ src: icon('icon.jpeg'), sizes: '1024x1024', type: 'image/jpeg' }],
           });
           setPlaybackState('playing');
         }
