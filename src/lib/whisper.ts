@@ -19,8 +19,16 @@ export interface TranscribeProgress {
   percent?: number;
 }
 
-const WHISPER_MODEL = 'Xenova/whisper-small';
-const MODEL_DOWNLOAD_HINT = '約 250–290MB';
+// iPhone / iPad（含偽裝成 Mac 的 iPadOS）的 Safari 對單一分頁的記憶體限制很嚴，
+// whisper-small 載入後容易超過上限，頁面會被系統強制重新整理，
+// 所以 iOS 改用較小的 whisper-base。
+const IS_IOS =
+  typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+const WHISPER_MODEL = IS_IOS ? 'Xenova/whisper-base' : 'Xenova/whisper-small';
+const MODEL_DOWNLOAD_HINT = IS_IOS ? '約 80–100MB' : '約 250–290MB';
 
 const MIN_TRACKED_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -59,7 +67,17 @@ async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
   if (!AudioContextClass) {
     throw new Error('您的瀏覽器不支援 AudioContext 音訊解碼');
   }
-  const audioCtx = new AudioContextClass();
+  const targetSampleRate = 16000;
+
+  // decodeAudioData 會把結果重新取樣成 AudioContext 的取樣率。
+  // 直接指定 16kHz，解碼後的資料量只有原本（44.1/48kHz）的三分之一左右，
+  // 可以大幅降低長音檔在手機上的記憶體尖峰。不支援這個參數時退回預設值。
+  let audioCtx: AudioContext;
+  try {
+    audioCtx = new AudioContextClass({ sampleRate: targetSampleRate });
+  } catch {
+    audioCtx = new AudioContextClass();
+  }
 
   try {
     let audioBuffer: AudioBuffer;
@@ -69,7 +87,17 @@ async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
       throw new Error(`音訊解碼失敗：${err?.message || '無法解析音訊格式'}`);
     }
 
-    const targetSampleRate = 16000;
+    // 已經是 16kHz：直接手動混成單聲道，不需要再建立 OfflineAudioContext 渲染一次。
+    if (audioBuffer.sampleRate === targetSampleRate) {
+      const channels = audioBuffer.numberOfChannels;
+      const mono = new Float32Array(audioBuffer.length);
+      for (let c = 0; c < channels; c++) {
+        const data = audioBuffer.getChannelData(c);
+        for (let i = 0; i < mono.length; i++) mono[i] += data[i] / channels;
+      }
+      return mono;
+    }
+
     const offlineCtx = new OfflineAudioContext(
       1,
       Math.max(1, Math.ceil(audioBuffer.duration * targetSampleRate)),
