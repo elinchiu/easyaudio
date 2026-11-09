@@ -1,6 +1,0 @@
-{
-  "name": "Easy Audio, make it easy to listen to audios",
-  "description": "Easy way to listen to a bunch of audio from public google drive file",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
