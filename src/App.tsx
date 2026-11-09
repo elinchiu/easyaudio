@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioTrack } from './types/track';
 import { useAudioPlayer } from './hooks/useAudioPlayer';
@@ -10,19 +5,16 @@ import { useTranscriptionQueue } from './hooks/useTranscriptionQueue';
 import { fetchFolderAudioTracks, extractFolderId } from './lib/driveApi';
 import { googleSignIn, initAuth, getAccessTokenExpiresAt } from './lib/firebase';
 
-// Components
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
-import { GoogleAuthModal } from './components/GoogleAuthModal';
 import {
   TranscriptModal,
   TRANSCRIPT_PANEL_DEFAULT_WIDTH,
   clampTranscriptWidth,
 } from './components/TranscriptModal';
-import { PWAInstallButton } from './components/PWAInstallButton';
 
-import { 
-  FolderSync, 
+import {
+  FolderSync,
   Link2,
   AlertCircle,
   RefreshCw,
@@ -33,7 +25,6 @@ const DURATION_CACHE_KEY = 'tb_track_durations';
 const TRANSCRIPT_WIDTH_KEY = 'tb_transcript_width';
 const SAVED_FOLDER_KEY = 'tb_saved_folder_v1';
 
-/** 上次匯入的資料夾：重整網頁後用來還原，使用者不需要重新貼連結 */
 interface SavedFolder {
   url: string;
   name: string;
@@ -48,24 +39,13 @@ function readSavedFolder(): SavedFolder | null {
     if (data && typeof data.url === 'string' && Array.isArray(data.tracks)) {
       return { url: data.url, name: data.name || 'File Name', tracks: data.tracks };
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
   return null;
 }
 
-/**
- * 使用者開始播放某一首時，是否自動辨識「這一首」的文字（不做批次，一次只辨識正在播放的那一首；
- * 切到別首時，前一首沒辨識完的會被放棄，改辨識新的這一首）。
- * 匯入資料夾本身不會觸發辨識。
- * 第一次使用會自動下載語音辨識模型（約 250–290MB），而且辨識很吃 CPU：
- * 手機上可能耗電、發燙，可能影響播放順暢度。
- * 不想自動跑就改成 false（之後仍可在文字面板裡按「開始辨識」手動辨識這一首）。
- */
 const AUTO_TRANSCRIBE_ON_PLAY = true;
 
 export default function App() {
-  // 重整網頁後，還原上次匯入的資料夾與歌單（第一次使用或從沒匯入過就是空白）
   const [initialSaved] = useState<SavedFolder | null>(readSavedFolder);
   const [folderUrl, setFolderUrl] = useState<string>(initialSaved?.url ?? '');
   const [folderName, setFolderName] = useState<string>(initialSaved?.name ?? 'File Name');
@@ -76,37 +56,26 @@ export default function App() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isAuthorizing, setIsAuthorizing] = useState<boolean>(false);
 
-  // 貼上資料夾連結的輸入欄
   const [folderInput, setFolderInput] = useState<string>('');
 
-  // 每首音檔的時長（秒），播放過才會記錄，並存在 localStorage
   const [durations, setDurations] = useState<Record<string, number>>(() => {
     try {
       const raw = localStorage.getItem(DURATION_CACHE_KEY);
       if (raw) return JSON.parse(raw);
-    } catch {
-      // ignore
-    }
+    } catch {}
     return {};
   });
   const lastSeenIdRef = useRef<string | undefined>(undefined);
   const lastSeenDurationRef = useRef<number>(0);
 
-  // Modals state
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isTranscriptModalOpen, setIsTranscriptModalOpen] = useState(false);
-  const [pendingTrack, setPendingTrack] = useState<AudioTrack | null>(null);
-  // 這次匯入失敗是不是因為「私人資料夾」（用來調整警示框的說明文字）
   const [isPrivateFolder, setIsPrivateFolder] = useState(false);
 
-  // 桌面版文字面板的寬度（使用者可以拖曳調整），以及是否正在拖曳
   const [transcriptWidth, setTranscriptWidth] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(TRANSCRIPT_WIDTH_KEY));
       if (saved > 0) return clampTranscriptWidth(saved);
-    } catch {
-      // ignore
-    }
+    } catch {}
     return TRANSCRIPT_PANEL_DEFAULT_WIDTH;
   });
   const [isResizingPanel, setIsResizingPanel] = useState(false);
@@ -114,36 +83,25 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem(TRANSCRIPT_WIDTH_KEY, String(transcriptWidth));
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [transcriptWidth]);
 
-  // 清掉舊版本殘留在瀏覽器裡的資料夾／歌單快取（只跑一次）
   useEffect(() => {
     ['tb_folder_url', 'tb_folder_tracks', 'tb_folder_name'].forEach((k) => {
       try {
         localStorage.removeItem(k);
-      } catch {
-        // ignore
-      }
+      } catch {}
     });
   }, []);
 
-  // Authorize Google Drive handler（僅供私人資料夾使用，公開資料夾不需要）
-  const handleAuthorize = async (trackToPlay?: AudioTrack | null) => {
+  const handleAuthorize = async () => {
     setIsAuthorizing(true);
     try {
       const res = await googleSignIn();
       if (res?.accessToken) {
         setAccessToken(res.accessToken);
-        setIsAuthModalOpen(false);
-        const targetTrack = trackToPlay || pendingTrack;
-        setPendingTrack(null);
-
-        // 只有已經有資料夾時才重新載入；空白狀態下登入就只登入
         if (folderUrl) {
-          await loadEntireFolder(folderUrl, false, res.accessToken, targetTrack);
+          await loadEntireFolder(folderUrl, false, res.accessToken);
         }
       }
     } catch (e) {
@@ -153,13 +111,10 @@ export default function App() {
     }
   };
 
-  // Audio player hook with accessToken
-  const player = useAudioPlayer(accessToken, handleAuthorize);
+  const player = useAudioPlayer(accessToken);
 
-  // 語音辨識佇列：一次辨識一首，其餘排隊；放在這裡，文字面板關著時也會在背景繼續跑
   const queue = useTranscriptionQueue({ getTrackAudioBlob: player.getTrackAudioBlob });
 
-  // 使用者開始播放某一首（或切到另一首）時，自動辨識這一首（已經有文字的會自動略過）
   const currentTrackRef = useRef<AudioTrack | null>(null);
   currentTrackRef.current = player.currentTrack ?? null;
   const currentTrackId = player.currentTrack?.id;
@@ -169,7 +124,6 @@ export default function App() {
     if (currentTrackRef.current) transcribeOnly(currentTrackRef.current);
   }, [currentTrackId, transcribeOnly]);
 
-  // 播放時記錄目前這首的時長
   useEffect(() => {
     const id = player.currentTrack?.id;
     const d = player.duration;
@@ -179,7 +133,6 @@ export default function App() {
     const trackChanged = lastSeenIdRef.current !== id;
     lastSeenIdRef.current = id;
 
-    // 剛切歌時，duration 可能還是上一首的值，先略過
     if (trackChanged && d === lastSeenDurationRef.current) return;
 
     lastSeenDurationRef.current = d;
@@ -189,23 +142,18 @@ export default function App() {
       const next = { ...prev, [id]: d };
       try {
         localStorage.setItem(DURATION_CACHE_KEY, JSON.stringify(next));
-      } catch {
-        // ignore
-      }
+      } catch {}
       return next;
     });
   }, [player.duration, player.currentTrack?.id]);
 
-  // Listen to auth：重新整理後，如果上次登入的 token 還沒過期，會直接沿用（不用重新登入）
   useEffect(() => {
-    const unsub = initAuth((user, token) => {
+    const unsub = initAuth((_user, token) => {
       setAccessToken(token);
     });
     return () => unsub();
   }, []);
 
-  // Google 的 token 約 1 小時過期：時間到就當作登出。
-  // 公開資料夾不受影響（改用 API Key 讀取），私人資料夾再按一次「登入 Google」即可。
   useEffect(() => {
     if (!accessToken) return;
     const msLeft = getAccessTokenExpiresAt() - Date.now();
@@ -217,19 +165,15 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [accessToken]);
 
-  // Sync playlist with tracks
   useEffect(() => {
     player.setPlaylist(tracks);
   }, [tracks]);
 
-  // Load a complete Google Drive folder（回傳 true 代表成功）
   const loadEntireFolder = useCallback(
     async (
-      targetUrlOrId: string, 
-      forceAuth = false, 
-      explicitToken?: string | null, 
-      trackToPlayAfter?: AudioTrack | null,
-      // silent：背景更新用。失敗時保留目前的歌單，不跳出錯誤訊息
+      targetUrlOrId: string,
+      forceAuth = false,
+      explicitToken?: string | null,
       silent = false
     ): Promise<boolean> => {
       const folderId = extractFolderId(targetUrlOrId);
@@ -241,7 +185,6 @@ export default function App() {
 
       let token = explicitToken !== undefined ? explicitToken : accessToken;
 
-      // 只有使用者主動按「登入 Google」時才要求授權（私人資料夾）
       if (forceAuth && !token) {
         try {
           const authResult = await googleSignIn();
@@ -261,35 +204,20 @@ export default function App() {
         const result = await fetchFolderAudioTracks(folderId, token);
         setFolderName(result.folderName);
         setTracks(result.tracks);
-        player.setPlaylist(result.tracks);
 
-        // 存起來，重整網頁後可以直接還原
         try {
           localStorage.setItem(
             SAVED_FOLDER_KEY,
             JSON.stringify({ url: targetUrlOrId, name: result.folderName, tracks: result.tracks })
           );
-        } catch {
-          // 空間不足就算了，只是重整後要重新匯入
-        }
+        } catch {}
 
-        // 匯入不會自動開始辨識（等使用者播放某一首才辨識那一首）。
-        // 這裡只清理：換了另一個資料夾時，舊資料夾的辨識會被放棄；
-        // 重新整理同一個資料夾則不會中斷正在跑的辨識。
         queue.retainOnly(result.tracks);
-
-        if (trackToPlayAfter) {
-          // Play the requested track right away
-          const matched = result.tracks.find(t => t.id === trackToPlayAfter.id) || trackToPlayAfter;
-          player.playTrack(matched, result.tracks);
-        }
         return true;
       } catch (err: any) {
         console.error('Failed to load entire folder:', err);
-        // 直接顯示 driveApi 給的具體原因，不再一律要求授權
         if (!silent) {
           setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
-          // 私人資料夾：警示框會改成請使用者登入 Google（貼上的連結會保留在欄位裡）
           setIsPrivateFolder(err?.name === 'AuthRequiredError');
         }
         return false;
@@ -297,17 +225,14 @@ export default function App() {
         setIsLoadingFolder(false);
       }
     },
-    [accessToken, player, queue.retainOnly]
+    [accessToken, queue.retainOnly]
   );
 
-  // 還原上次的資料夾後，在背景重新讀取一次：歌單馬上就能用，同時更新檔案清單與串流網址。
-  // 背景更新失敗（例如沒網路）不會報錯，繼續使用還原的歌單。
   useEffect(() => {
-    if (folderUrl) void loadEntireFolder(folderUrl, false, undefined, null, true);
+    if (folderUrl) void loadEntireFolder(folderUrl, false, undefined, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 按「匯入」：載入貼上的資料夾連結
   const handleImport = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const url = folderInput.trim();
@@ -315,31 +240,24 @@ export default function App() {
 
     setFolderUrl(url);
     const ok = await loadEntireFolder(url, false);
-    // 成功才清空輸入欄；失敗時保留，方便使用者修改後重試
     if (ok) setFolderInput('');
   };
 
-  // 按警示框裡的「登入 Google 讀取」：登入後，用欄位裡的連結（沒有就用上次的）重新匯入
   const handleLoginAndLoad = async () => {
     const url = folderInput.trim() || folderUrl;
     if (!url || isLoadingFolder) return;
 
     setFolderUrl(url);
     const ok = await loadEntireFolder(url, true);
-    // 成功才清空欄位；失敗（或取消登入）時保留連結
     if (ok) setFolderInput('');
   };
 
-  // Play track handler — 公開資料夾不需要登入，直接播放
   const handleTrackClick = (track: AudioTrack) => {
     player.playTrack(track, tracks);
   };
 
-  // Keyboard Shortcuts:
-  // Space (播放/暫停)、←/→ (±3 秒)、Shift+N (下一個音檔)、Shift+P (上一個音檔)、S (文字面板)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input or textarea
       const target = e.target as HTMLElement;
       if (
         target &&
@@ -350,7 +268,6 @@ export default function App() {
         return;
       }
 
-      // 有按 Ctrl / Cmd / Alt 就不攔截，避免和瀏覽器快捷鍵衝突
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       if (e.shiftKey && e.code === 'KeyN') {
@@ -369,7 +286,6 @@ export default function App() {
         e.preventDefault();
         player.skip(3);
       } else if (e.code === 'KeyS' && !e.shiftKey && !e.repeat) {
-        // S：開啟／關閉文字面板（沒有選歌時不動作）
         if (!player.currentTrack) return;
         e.preventDefault();
         setIsTranscriptModalOpen((open) => !open);
@@ -382,17 +298,13 @@ export default function App() {
 
   return (
     <div
-      // --transcript-w：文字面板寬度，面板本身（寬度）與這裡（讓出右側空間）共用同一個值
       style={{ ['--transcript-w' as any]: `${transcriptWidth}px` }}
       className={`min-h-screen bg-white text-[#36415A] font-light flex flex-col selection:bg-[#36415A] selection:text-[#E0F8C7] ${
-        // 拖曳調整寬度時關掉動畫，主畫面才跟得上滑鼠
         isResizingPanel ? '' : 'transition-[padding] duration-200'
       } ${isTranscriptModalOpen ? 'lg:pr-[var(--transcript-w)]' : ''}`}
     >
-      {/* Main Navigation Header (Light Theme) */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          {/* Logo & Title */}
           <div className="flex items-center gap-2.5 min-w-0">
             <img
               src={`${import.meta.env.BASE_URL}icon.jpeg`}
@@ -411,9 +323,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Header Actions */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Google 登入：僅私人資料夾需要，公開資料夾可不登入 */}
             {accessToken ? (
               <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -434,9 +344,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4 space-y-4 pb-32">
-        {/* 貼上資料夾連結 + 匯入 */}
         <form
           onSubmit={handleImport}
           className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-2.5"
@@ -464,13 +372,11 @@ export default function App() {
             <span>{isLoadingFolder ? '匯入中...' : '匯入'}</span>
           </button>
 
-          {/* 使用提示：放在貼連結的欄位旁邊，讓使用者一進來就看到 */}
           <p className="basis-full px-1 text-xs text-slate-500 leading-relaxed">
             請確認 Google Drive 資料夾已設為「知道連結的任何人」可檢視，再貼上連結並按「匯入」。若是非公開資料夾，可登入 Google 後讀取。
           </p>
         </form>
 
-        {/* Error banner：顯示實際原因；私人資料夾可選擇登入 Google */}
         {folderError && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm text-xs text-amber-900 space-y-2">
             <div className="flex items-start gap-2">
@@ -485,9 +391,7 @@ export default function App() {
             {!accessToken && (
               <div className="pt-1 flex items-center justify-between gap-3">
                 <span className="text-amber-800/80">
-                  {isPrivateFolder
-                    ? '若是私人資料夾，請登入 Google 後方可讀取。'
-                    : '若是私人資料夾，請登入 Google 後方可讀取。'}
+                  若是私人資料夾，請登入 Google 後方可讀取。
                 </span>
                 <button
                   onClick={handleLoginAndLoad}
@@ -500,7 +404,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Drive Folder Status Banner */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
@@ -528,7 +431,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Track List View with Search only (selected filter row removed, placeholder="搜尋...") */}
         <TrackListView
           tracks={tracks}
           durations={durations}
@@ -539,20 +441,12 @@ export default function App() {
         />
       </main>
 
-      {/* <footer className="text-center text-[11px] text-slate-400 py-6">
-        <a href={`${import.meta.env.BASE_URL}privacy.html`} className="hover:underline">Privacy Policy</a>
-        <span className="mx-2">·</span>
-        <a href={`${import.meta.env.BASE_URL}terms.html`} className="hover:underline">Terms of Service</a>
-      </footer> */}
-
-      {/* Persistent Bottom Audio Player (Light Mode with 3s skip) */}
       <AudioPlayerBar
         currentTrack={player.currentTrack}
         isPlaying={player.isPlaying}
         currentTime={player.currentTime}
         duration={player.duration}
         playbackRate={player.playbackRate}
-        repeatMode={player.repeatMode}
         volume={player.volume}
         isMuted={player.isMuted}
         isLoading={player.isLoadingAudio}
@@ -564,7 +458,6 @@ export default function App() {
         onSeek={player.seek}
         onSkip={player.skip}
         onChangePlaybackRate={player.changePlaybackRate}
-        onSetRepeatMode={player.setRepeatMode}
         onChangeVolume={player.changeVolume}
         onToggleMute={player.toggleMute}
         onSetPointA={player.setPointA}
@@ -573,7 +466,6 @@ export default function App() {
         onOpenTranscript={() => setIsTranscriptModalOpen((open) => !open)}
       />
 
-      {/* 音檔文字面板（固定在畫面右側；辨識由 queue 在背景進行；桌面版可拖曳調整寬度） */}
       <TranscriptModal
         isOpen={isTranscriptModalOpen}
         onClose={() => setIsTranscriptModalOpen(false)}
@@ -584,20 +476,6 @@ export default function App() {
         width={transcriptWidth}
         onWidthChange={setTranscriptWidth}
         onResizingChange={setIsResizingPanel}
-      />
-
-      {/* Google Authorization Dialog（私人資料夾備案，公開資料夾不會自動跳出） */}
-      <GoogleAuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => {
-          setIsAuthModalOpen(false);
-          setPendingTrack(null);
-        }}
-        onAuthorize={async () => {
-          await handleAuthorize(pendingTrack);
-        }}
-        isLoading={isAuthorizing}
-        pendingTrackName={pendingTrack?.name}
       />
     </div>
   );

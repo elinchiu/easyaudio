@@ -4,7 +4,6 @@ import { Play, Pause, Search, X, Music } from 'lucide-react';
 
 interface Props {
   tracks: AudioTrack[];
-  /** 已知的時長（秒），key 是 track id */
   durations?: Record<string, number>;
   currentTrackId?: string;
   isPlaying: boolean;
@@ -12,7 +11,6 @@ interface Props {
   onTogglePlay: () => void;
 }
 
-// 秒數轉 mm:ss，未知時顯示 --:--
 const formatDuration = (seconds?: number): string => {
   if (seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) return '--:--';
   const total = Math.round(seconds);
@@ -32,7 +30,6 @@ export const TrackListView: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const hasTracks = tracks.length > 0;
 
-  // 依搜尋字串過濾
   const filteredTracks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return tracks;
@@ -43,7 +40,6 @@ export const TrackListView: React.FC<Props> = ({
 
   return (
     <div className="space-y-3.5">
-      {/* 搜尋列 */}
       <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
         <div className="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 focus-within:border-indigo-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
           <Search className="w-4 h-4 text-slate-400 shrink-0" />
@@ -66,13 +62,11 @@ export const TrackListView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* 數量 */}
       <div className="px-1 text-xs text-slate-500 font-medium">
         {searchQuery ? `找到 ${filteredTracks.length} 筆符合` : `共 ${filteredTracks.length} 首音檔`}
       </div>
 
       {filteredTracks.length === 0 ? (
-        /* 沒有音檔，或搜尋不到 */
         <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-10 text-center shadow-sm space-y-4">
           <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto">
             <Music className="w-7 h-7" />
@@ -81,10 +75,9 @@ export const TrackListView: React.FC<Props> = ({
             <h4 className="text-base font-bold text-slate-800">
               {hasTracks ? '找不到符合條件的音檔' : '尚未載入音檔'}
             </h4>
-            {/* 還沒載入音檔時的使用說明，已移到上方貼連結的欄位旁邊 */}
             {hasTracks && (
               <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-                {`沒有包含「${searchQuery}」的檔案`}
+                沒有包含「{searchQuery}」的檔案
               </p>
             )}
           </div>
@@ -99,14 +92,12 @@ export const TrackListView: React.FC<Props> = ({
           )}
         </div>
       ) : (
-        /* 音檔列表 */
         <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 overflow-hidden shadow-sm">
           {filteredTracks.map((track) => {
             const isCurrent = track.id === currentTrackId;
             const isCurrentPlaying = isCurrent && isPlaying;
 
             return (
-              // 整列可點：目前這首就切換播放/暫停，否則播放這首（內部的播放鈕點擊會一起冒泡到這裡）
               <div
                 key={track.id}
                 onClick={() => (isCurrent ? onTogglePlay() : onPlayTrack(track))}

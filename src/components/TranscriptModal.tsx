@@ -17,12 +17,9 @@ interface Props {
   currentTrack: AudioTrack | null;
   currentTime: number;
   onSeek: (time: number) => void;
-  /** 語音辨識佇列（由 App 最上層建立；面板關著時辨識也會在背景繼續） */
   queue: TranscriptionQueue;
-  /** 桌面版面板寬度（px）。由 App 保管，這樣主畫面才能跟著讓出對應的空間 */
   width: number;
   onWidthChange: (width: number) => void;
-  /** 拖曳開始／結束時通知 App（拖曳中 App 會暫時關掉 padding 動畫，才不會延遲） */
   onResizingChange?: (resizing: boolean) => void;
 }
 
@@ -30,7 +27,6 @@ export const TRANSCRIPT_PANEL_DEFAULT_WIDTH = 420;
 export const TRANSCRIPT_PANEL_MIN_WIDTH = 320;
 const TRANSCRIPT_PANEL_MAX_WIDTH = 800;
 
-/** 寬度限制在 320px ～ min(800px, 視窗寬度的 60%) 之間 */
 export function clampTranscriptWidth(w: number): number {
   const max = Math.max(
     TRANSCRIPT_PANEL_MIN_WIDTH,
@@ -65,7 +61,6 @@ export const TranscriptModal: React.FC<Props> = ({
   const activeSegmentRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
 
-  // 元件被移除時，確保拖曳中設定的游標與選取樣式被還原
   useEffect(
     () => () => {
       document.body.style.userSelect = '';
@@ -74,10 +69,9 @@ export const TranscriptModal: React.FC<Props> = ({
     []
   );
 
-  // ── 拖曳左邊緣調整寬度（只有桌面版有這條拖曳把手） ──
   const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId); // 滑鼠移出把手也能繼續拖
+    e.currentTarget.setPointerCapture(e.pointerId);
     draggingRef.current = true;
     onResizingChange?.(true);
     document.body.style.userSelect = 'none';
@@ -86,7 +80,6 @@ export const TranscriptModal: React.FC<Props> = ({
 
   const handleResizePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!draggingRef.current) return;
-    // 面板貼在右邊，所以寬度 = 視窗寬度 - 滑鼠的 X 位置
     onWidthChange(clampTranscriptWidth(window.innerWidth - e.clientX));
   };
 
@@ -95,15 +88,12 @@ export const TranscriptModal: React.FC<Props> = ({
     draggingRef.current = false;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
+    } catch {}
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
     onResizingChange?.(false);
   };
 
-  // 鍵盤也能調整：把手聚焦後按 ←（變寬）/ →（變窄），Home 重設
   const handleResizeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
@@ -117,7 +107,6 @@ export const TranscriptModal: React.FC<Props> = ({
     }
   };
 
-  // 面板開啟時，按 Escape 關閉；面板關閉或元件卸載時移除監聽
   useEffect(() => {
     if (!isOpen) return;
 
@@ -129,18 +118,15 @@ export const TranscriptModal: React.FC<Props> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // 開啟面板、切歌、或任何一首辨識完成（queue.version 變動）時，重新讀取這首歌的文字
   useEffect(() => {
     if (!trackId || !isOpen) return;
     setTranscript(queue.getTranscript(trackId));
   }, [trackId, isOpen, queue.version, queue.getTranscript]);
 
-  // 切歌時清空搜尋
   useEffect(() => {
     setSearchQuery('');
   }, [trackId]);
 
-  // 目前播放到哪一句：開始時間不晚於目前時間的最後一句
   const activeId = useMemo(() => {
     let id: number | null = null;
     for (const seg of transcript?.segments ?? []) {
@@ -150,7 +136,6 @@ export const TranscriptModal: React.FC<Props> = ({
     return id;
   }, [transcript, currentTime]);
 
-  // 只有「換到另一句」時才捲動；不要每次播放時間更新都捲
   useEffect(() => {
     if (!isOpen || activeId === null) return;
     activeSegmentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -158,16 +143,13 @@ export const TranscriptModal: React.FC<Props> = ({
 
   if (!isOpen || !currentTrack) return null;
 
-  // 這一首在佇列裡的狀態
   const status = queue.statusOf(currentTrack.id);
   const isTranscribing = status === 'running';
   const isQueued = status === 'queued';
   const error = queue.errors[currentTrack.id] ?? null;
   const progress = isTranscribing ? queue.progress : null;
 
-  // 辨識這一首（手動辨識，或之前失敗後重試）
   const handleStartTranscribe = () => queue.transcribeOnly(currentTrack);
-  // 取消這一首（辨識中會中止、等候中會移除）
   const handleCancelTranscribe = () => queue.cancelTrack(currentTrack.id);
 
   const filteredSegments = (transcript?.segments || []).filter((seg) => {
@@ -176,15 +158,10 @@ export const TranscriptModal: React.FC<Props> = ({
   });
 
   return (
-    // 固定在畫面右側的面板（不是彈跳視窗，沒有遮罩，後面的畫面仍可操作）
-    // bottom-24：留出底部播放器的高度，如果播放器高度不同，改這個數字
-    // lg 以上寬度由 CSS 變數 --transcript-w 決定（App.tsx 設定，並同步把主畫面往左推）；
-    // 使用者可以拖曳左邊緣調整。小螢幕則滿版蓋在上面
     <aside
       aria-label="音檔文字"
       className="fixed top-0 right-0 bottom-24 z-30 w-full lg:w-[var(--transcript-w)] bg-white border-l border-slate-200 shadow-xl flex flex-col text-slate-800"
     >
-      {/* 拖曳把手：只在桌面版顯示，雙擊恢復預設寬度 */}
       <div
         role="separator"
         aria-orientation="vertical"
@@ -207,7 +184,6 @@ export const TranscriptModal: React.FC<Props> = ({
         <div className="absolute top-1/2 -translate-y-1/2 h-10 w-1.5 rounded-full bg-slate-300 group-hover:bg-[#36415A] group-active:bg-[#36415A] transition-colors" />
       </div>
 
-      {/* Header */}
       <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-white">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-[#E0F8C7] text-[#36415A] flex items-center justify-center shrink-0">
@@ -227,9 +203,7 @@ export const TranscriptModal: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Content Body */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-        {/* Error Banner */}
         {error && (
           <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-2xl flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -240,7 +214,6 @@ export const TranscriptModal: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Transcribing Progress State */}
         {isTranscribing && (
           <div className="py-12 px-4 flex flex-col items-center justify-center text-center space-y-4">
             <div className="w-16 h-16 rounded-3xl bg-[#E0F8C7] border border-[#BFE0A3] flex items-center justify-center text-[#36415A] shadow-md animate-pulse">
@@ -279,7 +252,6 @@ export const TranscriptModal: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Initial Empty State (No transcript yet) */}
         {!isTranscribing && !transcript && (
           <div className="py-10 px-2 flex flex-col items-center justify-center text-center space-y-4">
             <div className="w-16 h-16 rounded-3xl bg-[#E0F8C7] border border-[#BFE0A3] flex items-center justify-center text-[#36415A] shadow-sm">
@@ -322,10 +294,8 @@ export const TranscriptModal: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Transcript Display */}
         {!isTranscribing && transcript && (
           <div className="space-y-4">
-            {/* Search Bar within Transcript */}
             <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
               <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <input
@@ -342,7 +312,6 @@ export const TranscriptModal: React.FC<Props> = ({
               )}
             </div>
 
-            {/* Synced Subtitles */}
             <div className="space-y-2">
               {filteredSegments.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-400">找不到符合搜尋的文字</div>
@@ -361,7 +330,6 @@ export const TranscriptModal: React.FC<Props> = ({
                           : 'bg-white hover:bg-slate-50 border border-slate-100 text-slate-700'
                       }`}
                     >
-                      {/* Timestamp Pill */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -378,7 +346,6 @@ export const TranscriptModal: React.FC<Props> = ({
                         <span>{formatTime(segment.start)}</span>
                       </button>
 
-                      {/* Segment Text */}
                       <div className="flex-1 text-sm leading-relaxed">{segment.text}</div>
                     </div>
                   );
@@ -389,7 +356,6 @@ export const TranscriptModal: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Footer info：有文字之後才顯示 */}
       {transcript && !isTranscribing && (
         <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
           <span>點擊任意句子即可直接跳轉</span>

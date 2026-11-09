@@ -1,16 +1,10 @@
 import { AudioTrack } from '../types/track';
 import { getDirectAudioUrl } from './driveParser';
 
-export const DEFAULT_FOLDER_ID = '1J-6Cqy_XamKDEoT2lGp49d-OtP1g9i2m';
-
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 const MAX_FOLDER_DEPTH = 5;
 
-/**
- * 公開資料夾不需要使用者登入，但 Drive API 仍然需要一把 API Key。
- * 在 .env 設定 VITE_GOOGLE_API_KEY，部署時也要由 GitHub Secrets 注入。
- */
 const API_KEY: string = (import.meta.env.VITE_GOOGLE_API_KEY || '').trim();
 
 interface DriveFile {
@@ -25,10 +19,6 @@ export interface FolderFetchResult {
   tracks: AudioTrack[];
 }
 
-/**
- * 資料夾不是公開的（用 API Key 讀不到），需要使用者登入 Google 才能讀取。
- * 呼叫端用 error.name === 'AuthRequiredError' 判斷，然後跳出登入視窗。
- */
 export class AuthRequiredError extends Error {
   constructor(message: string) {
     super(message);
@@ -36,14 +26,6 @@ export class AuthRequiredError extends Error {
   }
 }
 
-/**
- * 示範模式：網址加上 ?demo=情境 就會重現對應的錯誤畫面（給簡報／展示用，不會動到任何資料）。
- * 讀取資料夾的情境（按「匯入」時出現）：
- *   private（私人資料夾，會出現登入提示；登入後會正常讀取）、notfound（登入後才會出現）、apikey、referrer、service、disabled、ratelimit
- * 播放／辨識的情境（點任一首音檔播放，或按「辨識」時出現）：
- *   blocked（Google 擋下下載）、quota（下載流量上限）、noperm（沒有權限）、notfound-file、offline、format
- * 例：https://elinchiu.github.io/easyaudio/?demo=blocked
- */
 function demoScenario(): string | null {
   try {
     return new URLSearchParams(window.location.search).get('demo');
@@ -65,7 +47,6 @@ const DEMO_FOLDER_ERRORS: Record<string, () => Response> = {
 
 const DEMO_MEDIA_SCENARIOS = ['blocked', 'quota', 'noperm', 'notfound-file', 'offline', 'format'];
 
-/** 從完整網址或純 ID 取出資料夾 ID */
 export function extractFolderId(input: string): string {
   const text = input.trim();
   return (
@@ -75,18 +56,12 @@ export function extractFolderId(input: string): string {
   );
 }
 
-/** 公開檔案的直接串流網址（走 Drive API + API Key，不需登入） */
 function getPublicMediaUrl(fileId: string): string {
   return API_KEY
     ? `${DRIVE_API}/files/${fileId}?alt=media&key=${encodeURIComponent(API_KEY)}`
     : getDirectAudioUrl(fileId);
 }
 
-/**
- * 呼叫 Drive API：有 token 用 token，沒有就帶 API Key。
- * token 過期或被撤銷（401）時，如果有 API Key 就自動改用公開方式再試一次，
- * 所以公開資料夾不會因為過期的登入而讀取失敗。
- */
 async function driveGet(
   path: string,
   params: Record<string, string>,
@@ -107,10 +82,6 @@ async function driveGet(
   return res;
 }
 
-/**
- * 把 Drive API 的錯誤回應轉成看得懂的中文訊息。
- * subject 是出錯的對象（讀取資料夾時是「資料夾」，播放時是「音檔」）。
- */
 async function buildError(
   response: Response,
   hasToken: boolean,
@@ -122,16 +93,13 @@ async function buildError(
 
   try {
     const error = (await response.json())?.error;
-    // details[].reason 比 errors[0].reason 更精確（例如 API_KEY_SERVICE_BLOCKED）
     reason =
       error?.details?.find((d: any) => d?.reason)?.reason ||
       error?.errors?.[0]?.reason ||
       error?.status ||
       '';
     message = error?.message || '';
-  } catch {
-    // 回應不是 JSON，略過
-  }
+  } catch {}
   console.warn('[Drive API error]', status, reason, message);
 
   const is = (...reasons: string[]) => reasons.includes(reason);
@@ -175,7 +143,6 @@ async function buildError(
   return new Error(`無法讀取${subject} (代碼 ${status})${message ? `：${message}` : ''}`);
 }
 
-/** 列出單一資料夾內所有項目（自動翻頁） */
 async function listFolderFiles(folderId: string, accessToken?: string | null): Promise<DriveFile[]> {
   const files: DriveFile[] = [];
   let pageToken: string | undefined;
@@ -202,7 +169,6 @@ async function listFolderFiles(folderId: string, accessToken?: string | null): P
   return files;
 }
 
-/** 是否為音檔 */
 function isAudioFile(file: DriveFile): boolean {
   return (
     file.mimeType?.startsWith('audio/') ||
@@ -211,11 +177,6 @@ function isAudioFile(file: DriveFile): boolean {
   );
 }
 
-/**
- * 讀取資料夾（含子資料夾）內所有音檔。
- * 公開資料夾：不需要 accessToken，只要有 API Key 即可。
- * 私人資料夾且沒有登入：丟出 AuthRequiredError，讓畫面請使用者登入 Google。
- */
 export async function fetchFolderAudioTracks(
   folderId: string,
   accessToken?: string | null
@@ -223,10 +184,8 @@ export async function fetchFolderAudioTracks(
   const rootId = extractFolderId(folderId);
   let folderName = 'File Name';
 
-  // 示範模式：重現讀取資料夾時的錯誤
   const demo = demoScenario();
   if (demo === 'private' && !accessToken) throw new AuthRequiredError('這個資料夾不是公開的。');
-  // 已登入仍讀不到：和真實情況相同的訊息（未登入時 404 與私人資料夾無法區分，所以走上面那條）
   if (demo === 'notfound') {
     if (!accessToken) throw new AuthRequiredError('這個資料夾不是公開的。');
     throw new Error('找不到此資料夾，請確認網址是否正確，以及目前登入的 Google 帳號有權限存取。');
@@ -237,7 +196,6 @@ export async function fetchFolderAudioTracks(
     throw new Error('尚未設定 API Key（VITE_GOOGLE_API_KEY），無法讀取公開資料夾。');
   }
 
-  // 1. 資料夾名稱，同時確認這個資料夾能不能被讀取
   let metaStatus = 0;
   try {
     const res = await driveGet(
@@ -251,9 +209,6 @@ export async function fetchFolderAudioTracks(
     console.warn('Could not fetch folder metadata:', e);
   }
 
-  // 公開資料夾用 API Key 一定讀得到。回 404 代表它不是公開的（或網址有誤）。
-  // 注意：私人資料夾列出內容時不會報錯，只會回傳空清單，所以一定要在這裡先擋下來，
-  // 否則畫面會顯示「成功匯入 0 首」，使用者完全不知道原因。
   if (metaStatus === 404) {
     if (!accessToken) {
       throw new AuthRequiredError('這個資料夾不是公開的。');
@@ -261,7 +216,6 @@ export async function fetchFolderAudioTracks(
     throw new Error('找不到此資料夾，請確認網址是否正確，以及目前登入的 Google 帳號有權限存取。');
   }
 
-  // 2. 掃描資料夾與所有子資料夾（BFS，限制深度，避免循環）
   const audioFiles: DriveFile[] = [];
   const visited = new Set([rootId]);
   let queue = [rootId];
@@ -274,7 +228,6 @@ export async function fetchFolderAudioTracks(
       try {
         items = await listFolderFiles(currentId, accessToken);
       } catch (err) {
-        // 根資料夾失敗就直接丟出錯誤；子資料夾失敗則略過
         if (currentId === rootId) throw err;
         console.warn(`Error scanning subfolder ${currentId}:`, err);
         continue;
@@ -304,30 +257,21 @@ export async function fetchFolderAudioTracks(
       mimeType: f.mimeType,
       audioUrl: getPublicMediaUrl(f.id),
     }))
-    // 依檔名自然排序（2 排在 10 前面）
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
 
   return { folderName, tracks };
 }
 
-/**
- * 取得可播放的網址。
- * - 已登入：用 Bearer token 下載成 blob（可播放私人檔案）；token 過期或失敗就改用公開網址
- * - 未登入：直接使用 Drive API + API Key 的串流網址（公開檔案）
- */
 export async function getTrackPlayableUrl(
   track: AudioTrack,
   accessToken?: string | null
 ): Promise<string> {
-  // 示範模式：給一個一定播不出來的網址，讓畫面走真正的錯誤流程
   const demo = demoScenario();
   if (demo && DEMO_MEDIA_SCENARIOS.includes(demo)) {
     return `${DRIVE_API}/files/demo-error?alt=media`;
   }
 
-  const isRemoteDriveFile = !track.id.startsWith('demo-') && !track.id.startsWith('local-');
-
-  if (accessToken && isRemoteDriveFile) {
+  if (accessToken) {
     try {
       const res = await fetch(`${DRIVE_API}/files/${track.id}?alt=media&supportsAllDrives=true`, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -342,25 +286,13 @@ export async function getTrackPlayableUrl(
     return track.audioUrl;
   }
 
-  return isRemoteDriveFile
-    ? getPublicMediaUrl(track.id)
-    : track.audioUrl || getDirectAudioUrl(track.id);
+  return getPublicMediaUrl(track.id);
 }
 
-/** Google 拒絕下載、但又讀不到錯誤內容時（瀏覽器只看到 CORS 錯誤）的說明 */
 const MEDIA_BLOCKED_MESSAGE =
   'Google 暫時拒絕了這個音檔的下載（常見原因：Google 偵測到大量自動化請求，或這個檔案的下載流量已達上限）。請稍等一段時間，或換個網路（例如關閉 VPN、改用行動網路）後再試。';
 
-/**
- * 音檔網址播放失敗時，向 Google 查出真正的原因（<audio> 元素本身看不到錯誤內容）。
- * 回傳看得懂的中文訊息；如果網址本身其實能正常讀取（例如是音檔格式問題），回傳 null。
- *
- * 注意：Google 擋下請求時（例如「We're sorry… automated queries」頁面）回應不帶 CORS 標頭，
- * fetch 會直接丟錯、讀不到狀態碼。這時改用「只查檔案資訊」的請求當探針（它有 CORS）：
- * 探針成功代表網路、API Key、檔案權限都沒問題，是下載本身被 Google 擋下；探針也失敗就照實回報。
- */
 export async function explainMediaUrlError(url: string): Promise<string | null> {
-  // 示範模式：直接回傳該情境的真實訊息
   const demo = demoScenario();
   if (demo === 'blocked') return MEDIA_BLOCKED_MESSAGE;
   if (demo === 'offline') return '無法連線到 Google Drive，請確認網路連線後再試。';
@@ -379,13 +311,11 @@ export async function explainMediaUrlError(url: string): Promise<string | null> 
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (res.ok) {
-      controller.abort(); // 網址可以讀，不需要真的把整個音檔下載下來
+      controller.abort();
       return null;
     }
     return (await buildError(res, false, '音檔')).message;
-  } catch {
-    // 讀不到回應內容（CORS 被擋或連線失敗），往下用探針確認
-  }
+  } catch {}
 
   let probeUrl: string;
   try {

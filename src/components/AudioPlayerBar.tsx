@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AudioTrack, RepeatMode, ABRepeat } from '../types/track';
+import { AudioTrack, ABRepeat } from '../types/track';
 import {
   Play,
   Pause,
@@ -18,7 +18,6 @@ import {
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5];
 
-// 底部播放列 / 全螢幕畫面的按鈕共用樣式
 const barBtn =
   'p-1.5 sm:p-2 text-slate-600 hover:text-slate-900 rounded-xl hover:bg-slate-100 active:scale-95 transition flex items-center justify-center';
 const drawerBtn =
@@ -31,8 +30,6 @@ const formatTime = (seconds: number): string => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-// 桌面版 = md（768px）以上，也就是底部播放列右側有完整控制（速度、A-B、音量）的版面。
-// 這個寬度以上不需要全螢幕展開畫面。要改斷點時，記得和下面的 md: 樣式一起改。
 const DESKTOP_QUERY = '(min-width: 768px)';
 
 function useIsDesktop(): boolean {
@@ -49,7 +46,6 @@ function useIsDesktop(): boolean {
   return matches;
 }
 
-// 圓形箭頭圖示，秒數文字放在圓圈正中間
 const SkipIcon: React.FC<{
   direction: 'back' | 'forward';
   seconds?: number;
@@ -80,7 +76,6 @@ interface Props {
   currentTime: number;
   duration: number;
   playbackRate: number;
-  repeatMode: RepeatMode;
   volume: number;
   isMuted: boolean;
   isLoading: boolean;
@@ -92,13 +87,11 @@ interface Props {
   onSeek: (time: number) => void;
   onSkip: (seconds: number) => void;
   onChangePlaybackRate: (rate: number) => void;
-  onSetRepeatMode: (mode: RepeatMode) => void;
   onChangeVolume: (volume: number) => void;
   onToggleMute: () => void;
   onSetPointA: () => void;
   onSetPointB: () => void;
   onClearAB: () => void;
-  /** 播放失敗時顯示在錯誤列的「重試」按鈕 */
   onRetry?: () => void;
   onOpenTranscript?: () => void;
 }
@@ -109,7 +102,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
   currentTime,
   duration,
   playbackRate,
-  repeatMode,
   volume,
   isMuted,
   isLoading,
@@ -121,7 +113,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
   onSeek,
   onSkip,
   onChangePlaybackRate,
-  onSetRepeatMode,
   onChangeVolume,
   onToggleMute,
   onSetPointA,
@@ -134,24 +125,16 @@ export const AudioPlayerBar: React.FC<Props> = ({
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const isDesktop = useIsDesktop();
 
-  // 視窗變寬成桌面版時，如果全螢幕畫面剛好開著，自動收起來
   useEffect(() => {
     if (isDesktop) setIsExpanded(false);
   }, [isDesktop]);
 
-  // 全螢幕展開畫面只有手機版有；桌面版點封面或曲名不會有任何反應
   const toggleExpanded = () => {
     if (!isDesktop) setIsExpanded((open) => !open);
   };
 
-  // 已移除循環按鈕：固定為「播完最後一首就停止」（normal）
-  useEffect(() => {
-    if (repeatMode !== 'normal') onSetRepeatMode('normal');
-  }, [repeatMode, onSetRepeatMode]);
-
   if (!currentTrack) return null;
 
-  // 時間點轉成進度條上的百分比位置
   const percentOf = (time: number | null) =>
     time !== null && duration > 0 ? (time / duration) * 100 : null;
 
@@ -171,9 +154,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
 
   return (
     <>
-      {/* 底部播放列 */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-xl border-t border-slate-200 shadow-[0_-4px_25px_rgba(0,0,0,0.08)] transition-all">
-        {/* 進度條（含 A-B 標記） */}
         <div className="relative w-full h-2 group cursor-pointer bg-slate-200">
           {aPercent !== null && bPercent !== null && (
             <div
@@ -214,11 +195,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
           />
         </div>
 
-        {/* 三欄 grid：中間的播放控制固定在正中央 */}
         <div className="max-w-7xl mx-auto px-4 py-2.5 sm:py-3 grid grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 safe-bottom text-slate-800">
-          {/* 左：曲目資訊 */}
           <div className="flex items-center gap-3 min-w-0">
-            {/* 手機：點封面展開全螢幕畫面；桌面：只是顯示用的圖示 */}
             <button
               onClick={toggleExpanded}
               tabIndex={isDesktop ? -1 : 0}
@@ -265,7 +243,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* 中：主要播放控制 */}
           <div className="flex items-center justify-center gap-1 sm:gap-2.5">
             <button onClick={() => onSkip(-3)} className={barBtn} title="倒退 3 秒 (快捷鍵: ←)">
               <SkipIcon direction="back" />
@@ -299,10 +276,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* 右：學習輔助（速度、A-B 循環、睡眠計時、音量），僅桌面顯示 */}
           <div className="hidden md:flex items-center justify-end gap-2">
-            
-            {/* 速度：寬螢幕直接攤開 */}
             <div className="hidden xl:flex items-center gap-1">
               <span className="text-xs text-slate-500 mr-0.5">速度:</span>
               {SPEED_OPTIONS.map((rate) => (
@@ -320,7 +294,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
               ))}
             </div>
 
-            {/* 速度：較窄的桌面維持下拉選單（原本的程式碼，只多加 xl:hidden） */}
             <div className="relative xl:hidden">
               <button
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
@@ -351,7 +324,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
               )}
             </div>
 
-            {/* A-B 循環 */}
             <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
               {abButtons.map(({ label, point, onClick, title }) => (
                 <button
@@ -376,7 +348,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
               )}
             </div>
 
-            {/* 音量 */}
             <div className="flex items-center gap-1.5 ml-1">
               <button
                 onClick={onToggleMute}
@@ -402,7 +373,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* 播放錯誤提示：顯示實際原因，並提供「重試」（不再要求登入） */}
         {audioError && (
           <div className="bg-rose-50 text-rose-800 text-xs py-2 px-4 border-t border-rose-200 font-medium flex items-center justify-between gap-3 flex-wrap">
             <span>{audioError}</span>
@@ -418,7 +388,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
         )}
       </div>
 
-      {/* 全螢幕展開畫面（只有手機版；桌面版不顯示） */}
       {isExpanded && !isDesktop && (
         <div className="fixed inset-0 z-50 bg-white/98 backdrop-blur-2xl flex flex-col justify-between p-6 animate-in slide-in-from-bottom duration-200 text-slate-800">
           <div className="flex items-center justify-between">
@@ -430,9 +399,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* 曲目資訊 */}
           <div className="flex flex-col items-center justify-center my-auto text-center px-4">
-            <div className="w-48 h-48 rounded-3xl bg-indigo-50 border border-indigo-100 flex flex-col items-center justify-center shadow-lg text-indigo-600 p-6 relative">
+            <div className="w-48 h-48 rounded-3xl bg-indigo-50 border border-indigo-100 flex flex-col items-center justify-center shadow-lg text-indigo-600 p-6">
               <Disc className={`w-24 h-24 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
             </div>
             <h2 className="mt-6 text-lg sm:text-xl font-bold text-slate-800 max-w-md break-all leading-relaxed">
@@ -454,9 +422,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
           </div>
 
           <div className="space-y-4 max-w-lg mx-auto w-full pb-6">
-            {/* 進度 */}
             <div>
-              <div className="relative w-full h-2 rounded-full bg-slate-200 cursor-pointer overflow-hidden mb-2">
+              <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden mb-2">
                 <div className="h-full bg-indigo-600" style={{ width: `${progressPercent}%` }} />
               </div>
               <div className="flex justify-between text-xs text-slate-500 font-mono">
@@ -465,7 +432,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* A-B 跟讀循環 */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
               <div className="text-xs text-slate-700">
                 <div className="font-bold text-slate-800">A-B 區間跟讀循環</div>
@@ -500,7 +466,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* 速度 */}
             <div className="flex items-center justify-center gap-1.5 text-xs text-slate-600 px-1">
               <span className="text-slate-500">速度:</span>
               {SPEED_OPTIONS.map((rate) => (
@@ -516,7 +481,6 @@ export const AudioPlayerBar: React.FC<Props> = ({
               ))}
             </div>
 
-            {/* 播放控制 */}
             <div className="flex items-center justify-center gap-4 pt-1">
               <button onClick={() => onSkip(-3)} className={drawerBtn} title="倒退 3 秒 (快捷鍵: ←)">
                 <SkipIcon direction="back" sizeClass="w-7 h-7" textClass="text-[10px]" />
