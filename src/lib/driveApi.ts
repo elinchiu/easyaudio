@@ -26,27 +26,6 @@ export class AuthRequiredError extends Error {
   }
 }
 
-function demoScenario(): string | null {
-  try {
-    return new URLSearchParams(window.location.search).get('demo');
-  } catch {
-    return null;
-  }
-}
-
-const fakeGoogleError = (status: number, reason: string, message: string) =>
-  new Response(JSON.stringify({ error: { code: status, message, errors: [{ reason }] } }), { status });
-
-const DEMO_FOLDER_ERRORS: Record<string, () => Response> = {
-  apikey: () => fakeGoogleError(400, 'keyInvalid', 'API key not valid. Please pass a valid API key.'),
-  referrer: () => fakeGoogleError(403, 'API_KEY_HTTP_REFERRER_BLOCKED', 'Requests from referer are blocked.'),
-  service: () => fakeGoogleError(403, 'API_KEY_SERVICE_BLOCKED', 'Requests to this API drive.googleapis.com are blocked.'),
-  disabled: () => fakeGoogleError(403, 'accessNotConfigured', 'Google Drive API has not been used in project.'),
-  ratelimit: () => fakeGoogleError(429, 'rateLimitExceeded', 'Rate Limit Exceeded'),
-};
-
-const DEMO_MEDIA_SCENARIOS = ['blocked', 'quota', 'noperm', 'notfound-file', 'offline', 'format'];
-
 export function extractFolderId(input: string): string {
   const text = input.trim();
   return (
@@ -184,14 +163,6 @@ export async function fetchFolderAudioTracks(
   const rootId = extractFolderId(folderId);
   let folderName = 'File Name';
 
-  const demo = demoScenario();
-  if (demo === 'private' && !accessToken) throw new AuthRequiredError('這個資料夾不是公開的。');
-  if (demo === 'notfound') {
-    if (!accessToken) throw new AuthRequiredError('這個資料夾不是公開的。');
-    throw new Error('找不到此資料夾，請確認網址是否正確，以及目前登入的 Google 帳號有權限存取。');
-  }
-  if (demo && DEMO_FOLDER_ERRORS[demo]) throw await buildError(DEMO_FOLDER_ERRORS[demo](), !!accessToken);
-
   if (!accessToken && !API_KEY) {
     throw new Error('尚未設定 API Key（VITE_GOOGLE_API_KEY），無法讀取公開資料夾。');
   }
@@ -266,11 +237,6 @@ export async function getTrackPlayableUrl(
   track: AudioTrack,
   accessToken?: string | null
 ): Promise<string> {
-  const demo = demoScenario();
-  if (demo && DEMO_MEDIA_SCENARIOS.includes(demo)) {
-    return `${DRIVE_API}/files/demo-error?alt=media`;
-  }
-
   if (accessToken) {
     try {
       const res = await fetch(`${DRIVE_API}/files/${track.id}?alt=media&supportsAllDrives=true`, {
@@ -293,20 +259,6 @@ const MEDIA_BLOCKED_MESSAGE =
   'Google 暫時拒絕了這個音檔的下載（常見原因：Google 偵測到大量自動化請求，或這個檔案的下載流量已達上限）。請稍等一段時間，或換個網路（例如關閉 VPN、改用行動網路）後再試。';
 
 export async function explainMediaUrlError(url: string): Promise<string | null> {
-  const demo = demoScenario();
-  if (demo === 'blocked') return MEDIA_BLOCKED_MESSAGE;
-  if (demo === 'offline') return '無法連線到 Google Drive，請確認網路連線後再試。';
-  if (demo === 'format') return null;
-  if (demo === 'quota') {
-    return (await buildError(fakeGoogleError(403, 'downloadQuotaExceeded', 'Quota exceeded'), false, '音檔')).message;
-  }
-  if (demo === 'noperm') {
-    return (await buildError(fakeGoogleError(403, 'forbidden', 'The caller does not have permission'), false, '音檔')).message;
-  }
-  if (demo === 'notfound-file') {
-    return (await buildError(fakeGoogleError(404, 'notFound', 'File not found'), false, '音檔')).message;
-  }
-
   const controller = new AbortController();
   try {
     const res = await fetch(url, { signal: controller.signal });
