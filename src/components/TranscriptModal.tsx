@@ -300,7 +300,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <input
                 type="text"
-                placeholder="搜尋文字內容..."
+                placeholder="搜尋文字..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
