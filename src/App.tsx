@@ -455,7 +455,7 @@ export default function App() {
             rel="noopener noreferrer"
             className="hover:text-[#36415A] hover:underline underline-offset-2 transition"
           >
-            服務條款
+            Terms
           </a>
           <span aria-hidden="true">·</span>
           <a
@@ -464,7 +464,7 @@ export default function App() {
             rel="noopener noreferrer"
             className="hover:text-[#36415A] hover:underline underline-offset-2 transition"
           >
-            隱私權政策
+            Privacy Policy
           </a>
         </nav>
       </footer>
