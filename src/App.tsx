@@ -344,7 +344,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4 space-y-4 pb-32">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4 space-y-4">
         <form
           onSubmit={handleImport}
           className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-2.5"
@@ -440,6 +440,34 @@ export default function App() {
           onTogglePlay={player.togglePlay}
         />
       </main>
+
+      {/* 頁尾：服務條款與隱私權政策。播放列（fixed）出現時要多留空間，避免蓋住連結。 */}
+      <footer
+        className={`w-full max-w-5xl mx-auto px-4 ${player.currentTrack ? 'pb-32' : 'pb-6'}`}
+      >
+        <nav
+          aria-label="法律資訊"
+          className="flex items-center justify-center gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500"
+        >
+          <a
+            href={`${import.meta.env.BASE_URL}terms.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-[#36415A] hover:underline underline-offset-2 transition"
+          >
+            服務條款
+          </a>
+          <span aria-hidden="true">·</span>
+          <a
+            href={`${import.meta.env.BASE_URL}privacy.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-[#36415A] hover:underline underline-offset-2 transition"
+          >
+            隱私權政策
+          </a>
+        </nav>
+      </footer>
 
       <AudioPlayerBar
         currentTrack={player.currentTrack}
