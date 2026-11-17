@@ -16,56 +16,165 @@
     p, li { margin:6px 0; }
     .muted { color:var(--muted); font-size:.9rem; }
     a { color:var(--link); }
+
+    /* 語言切換：沒有 JavaScript 時按鈕會隱藏，中英文內容會同時顯示 */
+    .lang-switch { display:flex; justify-content:flex-end; margin-bottom:16px; }
+    .lang-switch[hidden] { display:none; }
+    .lang-switch button { font:inherit; font-size:.85rem; line-height:1.4; padding:4px 14px; border:1px solid var(--line); background:transparent; color:var(--muted); cursor:pointer; }
+    .lang-switch button:first-child { border-radius:8px 0 0 8px; }
+    .lang-switch button:last-child { border-radius:0 8px 8px 0; border-left:0; }
+    .lang-switch button[aria-pressed="true"] { background:var(--link); border-color:var(--link); color:var(--bg); }
+    .lang-switch button:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
+    html[data-view="zh"] [data-lang="en"],
+    html[data-view="en"] [data-lang="zh"] { display:none; }
+    [data-lang="en"] { font-family:-apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; }
   </style>
+  <script>
+    (function () {
+      var KEY = 'easyaudio_legal_lang';
+      var TITLES = {
+        zh: '服務條款 - Easy Audio',
+        en: 'Terms of Service - Easy Audio'
+      };
+
+      function valid(v) { return v === 'zh' || v === 'en'; }
+      function save(lang) { try { localStorage.setItem(KEY, lang); } catch (e) {} }
+
+      // 優先順序：網址 ?lang= → 先前的選擇 → 瀏覽器語言
+      function pick() {
+        try {
+          var q = new URLSearchParams(location.search).get('lang');
+          if (valid(q)) { save(q); return q; }
+        } catch (e) {}
+        try {
+          var s = localStorage.getItem(KEY);
+          if (valid(s)) return s;
+        } catch (e) {}
+        return /^zh/i.test(navigator.language || '') ? 'zh' : 'en';
+      }
+
+      function apply(lang) {
+        document.documentElement.setAttribute('data-view', lang);
+        document.title = TITLES[lang];
+        var btns = document.querySelectorAll('.lang-switch button');
+        for (var i = 0; i < btns.length; i++) {
+          btns[i].setAttribute('aria-pressed', String(btns[i].getAttribute('data-set-lang') === lang));
+        }
+      }
+
+      apply(pick());
+
+      document.addEventListener('DOMContentLoaded', function () {
+        var box = document.querySelector('.lang-switch');
+        if (!box) return;
+        box.hidden = false;
+        apply(document.documentElement.getAttribute('data-view'));
+        box.addEventListener('click', function (e) {
+          var btn = e.target.closest ? e.target.closest('button[data-set-lang]') : null;
+          if (!btn) return;
+          var lang = btn.getAttribute('data-set-lang');
+          if (!valid(lang)) return;
+          save(lang);
+          apply(lang);
+        });
+      });
+    })();
+  </script>
 </head>
 <body>
 <main>
-  <h1>Easy Audio 服務條款</h1>
-  <p class="muted">最後更新：2026 年 11 月 5 日</p>
+  <div class="lang-switch" role="group" aria-label="語言 Language" hidden>
+    <button type="button" data-set-lang="zh" aria-pressed="true">中文</button>
+    <button type="button" data-set-lang="en" aria-pressed="false">English</button>
+  </div>
 
-  <h2>1. 接受條款</h2>
-  <p>使用 Easy Audio（<a href="https://elinchiu.github.io/easyaudio/">https://elinchiu.github.io/easyaudio/</a>，以下簡稱「本服務」）即表示你同意本條款。若你不同意，請停止使用本服務。</p>
+  <!-- ===================== 中文 ===================== -->
+  <div data-lang="zh" lang="zh-Hant">
+    <h1>Easy Audio 服務條款</h1>
+    <p class="muted">最後更新：2026 年 11 月 5 日</p>
 
-  <h2>2. 服務說明</h2>
-  <p>本服務是一個在瀏覽器中執行的音檔播放工具，讓你播放自己的 Google Drive 資料夾中的音檔，並提供速度調整、A-B 區間循環、離線快取等功能。本服務免費提供，沒有自己的伺服器，也不儲存你的檔案。</p>
+    <h2>1. 接受條款</h2>
+    <p>使用 Easy Audio（<a href="https://elinchiu.github.io/easyaudio/">https://elinchiu.github.io/easyaudio/</a>，以下簡稱「本服務」）即表示你同意本條款。若你不同意，請停止使用本服務。</p>
 
-  <h2>3. 你的責任</h2>
-  <ul>
-    <li>你只能播放你擁有或有權使用的檔案，並自行負責遵守相關著作權法律。</li>
-    <li>你必須遵守 Google 的服務條款與 Google Drive 的使用規範。</li>
-    <li>你須自行管理資料夾的分享設定。公開資料夾的內容，任何知道連結的人都能存取。</li>
-    <li>請勿以不當方式使用本服務，包括干擾服務運作、規避技術限制或進行任何非法行為。</li>
-  </ul>
+    <h2>2. 服務說明</h2>
+    <p>本服務是一個在瀏覽器中執行的音檔播放工具，讓你播放自己的 Google Drive 資料夾中的音檔，並提供速度調整、A-B 區間循環、離線快取等功能。本服務免費提供，沒有自己的伺服器，也不儲存你的檔案。</p>
 
-  <h2>4. 第三方服務</h2>
-  <p>本服務依賴 Google Drive 與 Google 登入等第三方服務，這些服務由 Google 提供並受其條款與隱私權政策約束。我們無法控制這些服務的可用性、變動或內容。</p>
+    <h2>3. 你的責任</h2>
+    <ul>
+      <li>你只能播放你擁有或有權使用的檔案，並自行負責遵守相關著作權法律。</li>
+      <li>你必須遵守 Google 的服務條款與 Google Drive 的使用規範。</li>
+      <li>你須自行管理資料夾的分享設定。公開資料夾的內容，任何知道連結的人都能存取。</li>
+      <li>請勿以不當方式使用本服務，包括干擾服務運作、規避技術限制或進行任何非法行為。</li>
+    </ul>
 
-  <h2>5. 隱私</h2>
-  <p>我們如何處理資料，請見<a href="privacy.html">隱私權政策</a>。</p>
+    <h2>4. 第三方服務</h2>
+    <p>本服務依賴 Google Drive 與 Google 登入等第三方服務，這些服務由 Google 提供並受其條款與隱私權政策約束。我們無法控制這些服務的可用性、變動或內容。</p>
 
-  <h2>6. 免責聲明</h2>
-  <p>本服務依「現狀」及「現有功能」提供，不提供任何明示或默示的保證，包括但不限於不中斷、無錯誤、符合特定用途。離線快取的資料可能因瀏覽器清理儲存空間等原因而消失，請勿將本服務作為檔案備份。</p>
+    <h2>5. 隱私</h2>
+    <p>我們如何處理資料，請見<a href="privacy.html">隱私權政策</a>。</p>
 
-  <h2>7. 責任限制</h2>
-  <p>在法律允許的最大範圍內，因使用或無法使用本服務所造成的任何損失或損害，本服務提供者不負賠償責任。</p>
+    <h2>6. 免責聲明</h2>
+    <p>本服務依「現狀」及「現有功能」提供，不提供任何明示或默示的保證，包括但不限於不中斷、無錯誤、符合特定用途。離線快取的資料可能因瀏覽器清理儲存空間等原因而消失，請勿將本服務作為檔案備份。</p>
 
-  <h2>8. 服務變更與終止</h2>
-  <p>我們可能隨時修改、暫停或終止本服務或其部分功能，恕不另行通知。</p>
+    <h2>7. 責任限制</h2>
+    <p>在法律允許的最大範圍內，因使用或無法使用本服務所造成的任何損失或損害，本服務提供者不負賠償責任。</p>
 
-  <h2>9. 條款修改</h2>
-  <p>本條款若有更新，會在此頁面公告並更新上方日期。更新後繼續使用本服務，即視為接受修改後的條款。</p>
+    <h2>8. 服務變更與終止</h2>
+    <p>我們可能隨時修改、暫停或終止本服務或其部分功能，恕不另行通知。</p>
 
-  <h2>10. 準據法</h2>
-  <p>本條款以中華民國（臺灣）法律為準據法。</p>
+    <h2>9. 條款修改</h2>
+    <p>本條款若有更新，會在此頁面公告並更新上方日期。更新後繼續使用本服務，即視為接受修改後的條款。</p>
 
-  <h2>11. 聯絡方式</h2>
-  <p>歡迎透過 <a href="https://github.com/elinchiu/easyaudio/issues">GitHub Issues</a> 留言，或來信：<a href="mailto:elinautumn@gmail.com">elinautumn@gmail.com</a></p>
+    <h2>10. 準據法</h2>
+    <p>本條款以中華民國（臺灣）法律為準據法。</p>
 
-  <hr style="margin:40px 0; border:0; border-top:1px solid var(--line)" />
+    <h2>11. 聯絡方式</h2>
+    <p>歡迎透過 <a href="https://github.com/elinchiu/easyaudio/issues">GitHub Issues</a> 留言，或來信：<a href="mailto:elinautumn@gmail.com">elinautumn@gmail.com</a></p>
+  </div>
 
-  <h1 style="font-size:1.3rem">Terms of Service (English summary)</h1>
-  <p>Easy Audio is a free, browser-based audio player for Google Drive folders. By using it you agree to play only files you own or are authorized to use, to follow Google's terms, and not to misuse the service. The service is provided "as is" without warranties, offline cache may be cleared by your browser at any time, and to the extent permitted by law the provider is not liable for any damages arising from its use. The service may change or end at any time. See the <a href="privacy.html">Privacy Policy</a> for how data is handled.</p>
-  <p>Contact: <a href="https://github.com/elinchiu/easyaudio/issues">GitHub Issues</a> or <a href="mailto:elinautumn@gmail.com">elinautumn@gmail.com</a></p>
+  <!-- ===================== English ===================== -->
+  <div data-lang="en" lang="en">
+    <h1>Easy Audio Terms of Service</h1>
+    <p class="muted">Last updated: November 5, 2026</p>
+
+    <h2>1. Acceptance of Terms</h2>
+    <p>By using Easy Audio (<a href="https://elinchiu.github.io/easyaudio/">https://elinchiu.github.io/easyaudio/</a>, the "Service"), you agree to these Terms. If you do not agree, please stop using the Service.</p>
+
+    <h2>2. Description of the Service</h2>
+    <p>The Service is a browser-based audio player that lets you play audio files from your own Google Drive folders, with features such as playback speed adjustment, A-B loop, and offline caching. The Service is provided free of charge, has no server of its own, and does not store your files.</p>
+
+    <h2>3. Your Responsibilities</h2>
+    <ul>
+      <li>You may only play files that you own or are authorized to use, and you are responsible for complying with applicable copyright laws.</li>
+      <li>You must comply with Google's Terms of Service and the Google Drive usage policies.</li>
+      <li>You are responsible for managing the sharing settings of your folders. Anyone who has the link can access the contents of a public folder.</li>
+      <li>Do not misuse the Service, including interfering with its operation, circumventing technical restrictions, or engaging in any illegal activity.</li>
+    </ul>
+
+    <h2>4. Third-Party Services</h2>
+    <p>The Service relies on third-party services such as Google Drive and Google Sign-In. These services are provided by Google and are governed by Google's terms and privacy policy. We have no control over their availability, changes, or content.</p>
+
+    <h2>5. Privacy</h2>
+    <p>For how we handle data, please see the <a href="privacy.html">Privacy Policy</a>.</p>
+
+    <h2>6. Disclaimer</h2>
+    <p>The Service is provided "as is" and "as available," without warranties of any kind, whether express or implied, including but not limited to uninterrupted or error-free operation or fitness for a particular purpose. Offline cached data may be lost, for example when your browser clears its storage, so please do not use the Service as a file backup.</p>
+
+    <h2>7. Limitation of Liability</h2>
+    <p>To the maximum extent permitted by law, the provider of the Service is not liable for any loss or damage arising from the use of, or inability to use, the Service.</p>
+
+    <h2>8. Changes and Termination</h2>
+    <p>We may modify, suspend, or discontinue the Service or any part of it at any time without notice.</p>
+
+    <h2>9. Changes to These Terms</h2>
+    <p>If these Terms are updated, we will post the changes on this page and update the date above. By continuing to use the Service after an update, you accept the revised Terms.</p>
+
+    <h2>10. Governing Law</h2>
+    <p>These Terms are governed by the laws of the Republic of China (Taiwan).</p>
+
+    <h2>11. Contact</h2>
+    <p>Feel free to leave a message on <a href="https://github.com/elinchiu/easyaudio/issues">GitHub Issues</a>, or email us at <a href="mailto:elinautumn@gmail.com">elinautumn@gmail.com</a></p>
+  </div>
 </main>
 </body>
 </html>
