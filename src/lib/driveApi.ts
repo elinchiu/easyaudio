@@ -1,5 +1,6 @@
 import { AudioTrack } from '../types/track';
 import { getDirectAudioUrl } from './driveParser';
+import { t } from './i18n';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
@@ -24,6 +25,22 @@ export class AuthRequiredError extends Error {
     super(message);
     this.name = 'AuthRequiredError';
   }
+}
+
+export class DriveRequestError extends Error {
+  /** 找不到 / 沒有權限這類錯誤，多半是私人檔案造成的，值得提醒使用者登入。 */
+  suggestsLogin: boolean;
+
+  constructor(message: string, suggestsLogin = false) {
+    super(message);
+    this.name = 'DriveRequestError';
+    this.suggestsLogin = suggestsLogin;
+  }
+}
+
+export interface MediaErrorExplanation {
+  message: string;
+  suggestsLogin: boolean;
 }
 
 export function extractFolderId(input: string): string {
@@ -64,8 +81,8 @@ async function driveGet(
 async function buildError(
   response: Response,
   hasToken: boolean,
-  subject = '資料夾'
-): Promise<Error> {
+  subjectKind: 'folder' | 'file' = 'folder'
+): Promise<DriveRequestError> {
   const { status } = response;
   let reason = '';
   let message = '';
@@ -81,45 +98,46 @@ async function buildError(
   } catch {}
   console.warn('[Drive API error]', status, reason, message);
 
+  const subject = t(subjectKind === 'folder' ? 'subjectFolder' : 'subjectFile');
   const is = (...reasons: string[]) => reasons.includes(reason);
-  const raw = `（Google 回應：${[status, reason, message].filter(Boolean).join(' / ')}）`;
+  const raw = t('googleResponse', { detail: [status, reason, message].filter(Boolean).join(' / ') });
 
   if (
     is('API_KEY_SERVICE_BLOCKED') ||
     (/are blocked/i.test(message) && /API/i.test(message) && !is('API_KEY_HTTP_REFERRER_BLOCKED'))
   ) {
-    return new Error(`API Key 的「API 限制」沒有包含 Google Drive API，請到 Cloud Console 勾選。${raw}`);
+    return new DriveRequestError(t('errApiKeyRestricted', { raw }));
   }
   if (is('API_KEY_HTTP_REFERRER_BLOCKED') || /referer/i.test(message)) {
-    return new Error('API Key 的網站來源（HTTP referrer）限制沒有包含目前的網域，請到 Google Cloud Console 加入。');
+    return new DriveRequestError(t('errReferrerBlocked'));
   }
   if (is('accessNotConfigured', 'SERVICE_DISABLED')) {
-    return new Error('Google Cloud 專案尚未啟用 Google Drive API，請先啟用。');
+    return new DriveRequestError(t('errApiDisabled'));
   }
   if (is('keyInvalid', 'API_KEY_INVALID') || /API key not valid/i.test(message)) {
-    return new Error('API Key 無效，請檢查 VITE_GOOGLE_API_KEY 是否正確。');
+    return new DriveRequestError(t('errKeyInvalid'));
   }
   if (is('rateLimitExceeded', 'userRateLimitExceeded') || status === 429) {
-    return new Error('Google Drive 請求過於頻繁，請稍後再試。');
+    return new DriveRequestError(t('errRateLimit'));
   }
   if (is('downloadQuotaExceeded')) {
-    return new Error(`這個${subject}的下載流量已達 Google 的上限，請稍後再試。${raw}`);
+    return new DriveRequestError(t('errDownloadQuota', { subject, raw }));
   }
   if (status === 404 || is('notFound')) {
-    return new Error(
-      hasToken
-        ? `找不到此${subject}，請確認網址是否正確。`
-        : `找不到此${subject}。請確認網址正確，且${subject}分享設定為「知道連結的任何人 → 檢視者」。`
+    return new DriveRequestError(
+      hasToken ? t('errNotFoundSignedIn', { subject }) : t('errNotFoundPublic', { subject }),
+      true
     );
   }
   if (status === 401 || status === 403) {
-    return new Error(
-      hasToken
-        ? `沒有權限存取此${subject}。${raw}`
-        : `無法讀取此${subject}。請確認${subject}分享設定為「知道連結的任何人 → 檢視者」。${raw}`
+    return new DriveRequestError(
+      hasToken ? t('errNoPermission', { subject, raw }) : t('errCannotRead', { subject, raw }),
+      true
     );
   }
-  return new Error(`無法讀取${subject} (代碼 ${status})${message ? `：${message}` : ''}`);
+  return new DriveRequestError(
+    t('errReadFailed', { subject, status, detail: message ? t('detailSep') + message : '' })
+  );
 }
 
 async function listFolderFiles(folderId: string, accessToken?: string | null): Promise<DriveFile[]> {
@@ -164,7 +182,7 @@ export async function fetchFolderAudioTracks(
   let folderName = 'File Name';
 
   if (!accessToken && !API_KEY) {
-    throw new Error('尚未設定 API Key（VITE_GOOGLE_API_KEY），無法讀取公開資料夾。');
+    throw new Error(t('errNoApiKey'));
   }
 
   let metaStatus = 0;
@@ -182,9 +200,9 @@ export async function fetchFolderAudioTracks(
 
   if (metaStatus === 404) {
     if (!accessToken) {
-      throw new AuthRequiredError('這個資料夾不是公開的。');
+      throw new AuthRequiredError(t('errFolderNotPublic'));
     }
-    throw new Error('找不到此資料夾，請確認網址是否正確，以及目前登入的 Google 帳號有權限存取。');
+    throw new Error(t('errFolderNotFoundSignedIn'));
   }
 
   const audioFiles: DriveFile[] = [];
@@ -255,10 +273,7 @@ export async function getTrackPlayableUrl(
   return getPublicMediaUrl(track.id);
 }
 
-const MEDIA_BLOCKED_MESSAGE =
-  'Google 暫時拒絕了這個音檔的下載（常見原因：Google 偵測到大量自動化請求，或這個檔案的下載流量已達上限）。請稍等一段時間，或換個網路（例如關閉 VPN、改用行動網路）後再試。';
-
-export async function explainMediaUrlError(url: string): Promise<string | null> {
+export async function explainMediaUrlError(url: string): Promise<MediaErrorExplanation | null> {
   const controller = new AbortController();
   try {
     const res = await fetch(url, { signal: controller.signal });
@@ -266,7 +281,8 @@ export async function explainMediaUrlError(url: string): Promise<string | null> 
       controller.abort();
       return null;
     }
-    return (await buildError(res, false, '音檔')).message;
+    const error = await buildError(res, false, 'file');
+    return { message: error.message, suggestsLogin: error.suggestsLogin };
   } catch {}
 
   let probeUrl: string;
@@ -282,9 +298,10 @@ export async function explainMediaUrlError(url: string): Promise<string | null> 
 
   try {
     const probe = await fetch(probeUrl);
-    if (probe.ok) return MEDIA_BLOCKED_MESSAGE;
-    return (await buildError(probe, false, '音檔')).message;
+    if (probe.ok) return { message: t('mediaBlocked'), suggestsLogin: false };
+    const error = await buildError(probe, false, 'file');
+    return { message: error.message, suggestsLogin: error.suggestsLogin };
   } catch {
-    return '無法連線到 Google Drive，請確認網路連線後再試。';
+    return { message: t('errCannotReachDrive'), suggestsLogin: false };
   }
 }

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { AudioTrack } from '../types/track';
 import { Play, Pause, Search, X, Music } from 'lucide-react';
+import { useT } from '../lib/i18n';
 
 interface Props {
   tracks: AudioTrack[];
@@ -27,6 +28,7 @@ export const TrackListView: React.FC<Props> = ({
   onPlayTrack,
   onTogglePlay,
 }) => {
+  const t = useT();
   const [searchQuery, setSearchQuery] = useState('');
   const hasTracks = tracks.length > 0;
 
@@ -34,7 +36,7 @@ export const TrackListView: React.FC<Props> = ({
     const q = searchQuery.trim().toLowerCase();
     if (!q) return tracks;
     return tracks.filter(
-      (t) => t.name.toLowerCase().includes(q) || t.cleanName?.toLowerCase().includes(q)
+      (track) => track.name.toLowerCase().includes(q) || track.cleanName?.toLowerCase().includes(q)
     );
   }, [tracks, searchQuery]);
 
@@ -45,7 +47,7 @@ export const TrackListView: React.FC<Props> = ({
           <Search className="w-4 h-4 text-slate-400 shrink-0" />
           <input
             type="text"
-            placeholder="搜尋..."
+            placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-transparent text-sm focus:outline-none placeholder:text-slate-400 text-slate-800 font-medium"
@@ -54,7 +56,7 @@ export const TrackListView: React.FC<Props> = ({
             <button
               onClick={() => setSearchQuery('')}
               className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
-              title="清除"
+              title={t('clear')}
             >
               <X className="w-4 h-4" />
             </button>
@@ -63,7 +65,9 @@ export const TrackListView: React.FC<Props> = ({
       </div>
 
       <div className="px-1 text-xs text-slate-500 font-medium">
-        {searchQuery ? `找到 ${filteredTracks.length} 筆符合` : `共 ${filteredTracks.length} 首音檔`}
+        {searchQuery
+          ? t('foundCount', { n: filteredTracks.length })
+          : t('totalCount', { n: filteredTracks.length })}
       </div>
 
       {filteredTracks.length === 0 ? (
@@ -73,11 +77,11 @@ export const TrackListView: React.FC<Props> = ({
           </div>
           <div>
             <h4 className="text-base font-bold text-slate-800">
-              {hasTracks ? '找不到符合條件的音檔' : '尚未載入音檔'}
+              {hasTracks ? t('noMatchTitle') : t('noTracksTitle')}
             </h4>
             {hasTracks && (
               <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-                沒有包含「{searchQuery}」的檔案
+                {t('noMatchDetail', { query: searchQuery })}
               </p>
             )}
           </div>
@@ -87,7 +91,7 @@ export const TrackListView: React.FC<Props> = ({
               onClick={() => setSearchQuery('')}
               className="mt-2 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition"
             >
-              清除搜尋
+              {t('clearSearch')}
             </button>
           )}
         </div>
@@ -115,7 +119,7 @@ export const TrackListView: React.FC<Props> = ({
                         ? 'bg-indigo-600 text-white shadow-indigo-200'
                         : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'
                     } ${isCurrentPlaying ? 'scale-105' : ''}`}
-                    title={isCurrentPlaying ? '暫停' : '播放音檔'}
+                    title={isCurrentPlaying ? t('trackPause') : t('trackPlay')}
                   >
                     {isCurrentPlaying ? (
                       <Pause className="w-4 h-4 fill-current" />

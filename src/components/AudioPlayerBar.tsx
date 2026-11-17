@@ -15,6 +15,7 @@ import {
   Disc,
   FileText,
 } from 'lucide-react';
+import { useT } from '../lib/i18n';
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5];
 
@@ -124,6 +125,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const isDesktop = useIsDesktop();
+  const t = useT();
 
   useEffect(() => {
     if (isDesktop) setIsExpanded(false);
@@ -148,8 +150,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
     { label: 'B', percent: bPercent, time: abRepeat.pointB },
   ];
   const abButtons = [
-    { label: 'A', point: abRepeat.pointA, onClick: onSetPointA, title: '設定循環起點 A' },
-    { label: 'B', point: abRepeat.pointB, onClick: onSetPointB, title: '設定循環終點 B' },
+    { label: 'A', point: abRepeat.pointA, onClick: onSetPointA, title: t('setPointATitle') },
+    { label: 'B', point: abRepeat.pointB, onClick: onSetPointB, title: t('setPointBTitle') },
   ];
 
   return (
@@ -173,7 +175,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                   key={label}
                   className="absolute top-[-3px] bottom-[-3px] w-1 bg-amber-500 z-20"
                   style={{ left: `${percent}%` }}
-                  title={`${label} 點: ${formatTime(time!)}`}
+                  title={t('markerTitle', { label, time: formatTime(time!) })}
                 />
               )
           )}
@@ -201,7 +203,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
               onClick={toggleExpanded}
               tabIndex={isDesktop ? -1 : 0}
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0 text-indigo-600 group relative overflow-hidden shadow-sm md:pointer-events-none"
-              title={isDesktop ? undefined : '展開詳細播放控制'}
+              title={isDesktop ? undefined : t('expandControls')}
             >
               <Disc className={`w-5 h-5 ${isPlaying ? 'animate-spin' : ''}`} style={{ animationDuration: '4s' }} />
               <div className="md:hidden absolute inset-0 bg-indigo-600/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -230,8 +232,8 @@ export const AudioPlayerBar: React.FC<Props> = ({
                       onOpenTranscript();
                     }}
                     className="shrink-0 inline-flex items-center justify-center p-1.5 rounded-lg bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-2xs"
-                    title="音檔文字（開啟 / 收起，快捷鍵: S）"
-                    aria-label="音檔文字"
+                    title={t('transcriptToggle')}
+                    aria-label={t('transcript')}
                   >
                     <FileText className="w-3.5 h-3.5 text-[#36415A]" />
                   </button>
@@ -244,11 +246,11 @@ export const AudioPlayerBar: React.FC<Props> = ({
           </div>
 
           <div className="flex items-center justify-center gap-1 sm:gap-2.5">
-            <button onClick={() => onSkip(-3)} className={barBtn} title="倒退 3 秒 (快捷鍵: ←)">
+            <button onClick={() => onSkip(-3)} className={barBtn} title={t('skipBackTitle')}>
               <SkipIcon direction="back" />
             </button>
 
-            <button onClick={onPrev} className={barBtn} title="上一首 (快捷鍵: Shift+P)">
+            <button onClick={onPrev} className={barBtn} title={t('prevTitle')}>
               <SkipBack className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
@@ -256,7 +258,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
               onClick={onTogglePlay}
               disabled={isLoading}
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-md shadow-indigo-200 active:scale-95 transition disabled:opacity-50"
-              title={isPlaying ? '暫停 (快捷鍵: 空白鍵)' : '播放 (快捷鍵: 空白鍵)'}
+              title={isPlaying ? t('pauseTitle') : t('playTitle')}
             >
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -267,18 +269,18 @@ export const AudioPlayerBar: React.FC<Props> = ({
               )}
             </button>
 
-            <button onClick={onNext} className={barBtn} title="下一首 (快捷鍵: Shift+N)">
+            <button onClick={onNext} className={barBtn} title={t('nextTitle')}>
               <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
-            <button onClick={() => onSkip(3)} className={barBtn} title="快進 3 秒 (快捷鍵: →)">
+            <button onClick={() => onSkip(3)} className={barBtn} title={t('skipForwardTitle')}>
               <SkipIcon direction="forward" />
             </button>
           </div>
 
           <div className="hidden md:flex items-center justify-end gap-2">
             <div className="hidden xl:flex items-center gap-1">
-              <span className="text-xs text-slate-500 mr-0.5">速度:</span>
+              <span className="text-xs text-slate-500 mr-0.5">{t('speed')}</span>
               {SPEED_OPTIONS.map((rate) => (
                 <button
                   key={rate}
@@ -298,7 +300,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
               <button
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
-                title="速度調整"
+                title={t('speedTitle')}
               >
                 <Gauge className="w-3.5 h-3.5 text-indigo-600" />
                 <span>{playbackRate}x</span>
@@ -341,7 +343,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                 <button
                   onClick={onClearAB}
                   className="text-[10px] px-1.5 py-1 text-slate-400 hover:text-rose-500 font-bold"
-                  title="清除 A-B 循環"
+                  title={t('clearABTitle')}
                 >
                   ✕
                 </button>
@@ -352,7 +354,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
               <button
                 onClick={onToggleMute}
                 className="text-slate-500 hover:text-slate-800 p-1"
-                title={isMuted ? '取消靜音' : '靜音'}
+                title={isMuted ? t('unmute') : t('mute')}
               >
                 {isMuted || volume === 0 ? (
                   <VolumeX className="w-4 h-4 text-rose-500" />
@@ -381,7 +383,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                 onClick={onRetry}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-3 py-1 rounded-lg text-xs transition shadow-xs shrink-0"
               >
-                重試
+                {t('retry')}
               </button>
             )}
           </div>
@@ -416,7 +418,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                 className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-[#E0F8C7] hover:bg-[#d4f2b3] text-[#36415A] border border-[#BFE0A3] transition active:scale-95 shadow-xs"
               >
                 <FileText className="w-3.5 h-3.5 text-[#36415A]" />
-                <span>Script</span>
+                <span>{t('transcriptBtn')}</span>
               </button>
             )}
           </div>
@@ -434,11 +436,11 @@ export const AudioPlayerBar: React.FC<Props> = ({
 
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
               <div className="text-xs text-slate-700">
-                <div className="font-bold text-slate-800">A-B 區間跟讀循環</div>
+                <div className="font-bold text-slate-800">{t('abTitle')}</div>
                 <div className="text-[11px] text-slate-500">
                   {abButtons
                     .map(({ label, point }) =>
-                      point !== null ? `${label}: ${formatTime(point)}` : `尚未設 ${label} 點`
+                      point !== null ? `${label}: ${formatTime(point)}` : t('abNotSet', { label })
                     )
                     .join(' · ')}
                 </div>
@@ -452,7 +454,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
                       point !== null ? 'bg-amber-500 text-white' : 'bg-white border border-slate-200 text-slate-700'
                     }`}
                   >
-                    設 {label} 點
+                    {t('setPoint', { label })}
                   </button>
                 ))}
                 {hasAB && (
@@ -460,14 +462,14 @@ export const AudioPlayerBar: React.FC<Props> = ({
                     onClick={onClearAB}
                     className="p-1.5 text-xs text-slate-400 hover:text-rose-500 font-bold"
                   >
-                    清除
+                    {t('clear')}
                   </button>
                 )}
               </div>
             </div>
 
             <div className="flex items-center justify-center gap-1.5 text-xs text-slate-600 px-1">
-              <span className="text-slate-500">速度:</span>
+              <span className="text-slate-500">{t('speed')}</span>
               {SPEED_OPTIONS.map((rate) => (
                 <button
                   key={rate}
@@ -482,7 +484,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
             </div>
 
             <div className="flex items-center justify-center gap-4 pt-1">
-              <button onClick={() => onSkip(-3)} className={drawerBtn} title="倒退 3 秒 (快捷鍵: ←)">
+              <button onClick={() => onSkip(-3)} className={drawerBtn} title={t('skipBackTitle')}>
                 <SkipIcon direction="back" sizeClass="w-7 h-7" textClass="text-[10px]" />
               </button>
               <button onClick={onPrev} className={drawerBtn}>
@@ -501,7 +503,7 @@ export const AudioPlayerBar: React.FC<Props> = ({
               <button onClick={onNext} className={drawerBtn}>
                 <SkipForward className="w-6 h-6" />
               </button>
-              <button onClick={() => onSkip(3)} className={drawerBtn} title="快進 3 秒 (快捷鍵: →)">
+              <button onClick={() => onSkip(3)} className={drawerBtn} title={t('skipForwardTitle')}>
                 <SkipIcon direction="forward" sizeClass="w-7 h-7" textClass="text-[10px]" />
               </button>
             </div>

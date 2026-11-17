@@ -1,36 +1,33 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AudioTrack, ABRepeat } from '../types/track';
-import { getTrackPlayableUrl, explainMediaUrlError } from '../lib/driveApi';
+import { getTrackPlayableUrl, explainMediaUrlError, type MediaErrorExplanation } from '../lib/driveApi';
+import { t } from '../lib/i18n';
 
 const audioBlobCache = new Map<string, string>();
 
-const GENERIC_LOAD_ERROR = '音檔載入失敗，正在確認原因，請稍後...';
-
-const UNKNOWN_LOAD_ERROR =
-  'Google Drive 有回應，但音檔還是播不出來，可能是網路不穩、暫時無回應，或音檔格式瀏覽器無法解碼。請重整網頁後再試。';
-
-function withLoginHint(message: string, hasToken: boolean): string {
-  if (hasToken) return message;
-  if (!/分享設定|沒有權限|找不到此/.test(message)) return message;
-  return `${message} 若是私人檔案，請登入 Google 後方可讀取。`;
+// 尚未登入、而且錯誤屬於「找不到 / 沒權限」這類時，提醒使用者登入。
+// 判斷依據是錯誤本身的 suggestsLogin 標記，不依賴訊息文字（才不會受語言影響）。
+function withLoginHint({ message, suggestsLogin }: MediaErrorExplanation, hasToken: boolean): string {
+  if (hasToken || !suggestsLogin) return message;
+  return `${message} ${t('loginHintSuffix')}`;
 }
 
 const setPlaybackState = (state: MediaSessionPlaybackState) => {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state;
 };
 
-const diagnosisCache = new Map<string, Promise<string>>();
+const diagnosisCache = new Map<string, Promise<MediaErrorExplanation>>();
 
-function diagnoseLoadFailure(src: string): Promise<string> {
+function diagnoseLoadFailure(src: string): Promise<MediaErrorExplanation> {
   const cached = diagnosisCache.get(src);
   if (cached) return cached;
 
-  const task = (async () => {
+  const task = (async (): Promise<MediaErrorExplanation> => {
     if (src.includes('googleapis.com')) {
       const real = await explainMediaUrlError(src);
       if (real) return real;
     }
-    return UNKNOWN_LOAD_ERROR;
+    return { message: t('loadErrorUnknown'), suggestsLogin: false };
   })();
 
   diagnosisCache.set(src, task);
@@ -97,11 +94,11 @@ export function useAudioPlayer(accessToken?: string | null) {
 
       setIsLoadingAudio(false);
       setIsPlaying(false);
-      setAudioError(GENERIC_LOAD_ERROR);
+      setAudioError(t('loadErrorChecking'));
 
       const src = audio.src;
-      diagnoseLoadFailure(src).then((message) => {
-        if (audio.src === src) setAudioError(withLoginHint(message, !!accessTokenRef.current));
+      diagnoseLoadFailure(src).then((explanation) => {
+        if (audio.src === src) setAudioError(withLoginHint(explanation, !!accessTokenRef.current));
       });
     };
 
@@ -146,7 +143,7 @@ export function useAudioPlayer(accessToken?: string | null) {
           if (url?.startsWith('blob:')) audioBlobCache.set(track.id, url);
         }
         if (isStale()) return;
-        if (!url) throw new Error('無法取得可播放的音訊串流網址');
+        if (!url) throw new Error(t('errNoStreamUrl'));
 
         audio.src = url;
         audio.playbackRate = playbackRate;
@@ -175,20 +172,20 @@ export function useAudioPlayer(accessToken?: string | null) {
         if (err?.name === 'AbortError') return;
 
         if (err?.name === 'NotAllowedError') {
-          setAudioError('瀏覽器擋下了自動播放，請再按一次播放鍵。');
+          setAudioError(t('errAutoplayBlocked'));
           return;
         }
 
         if (err?.name === 'NotSupportedError') {
           const src = audio.src;
-          setAudioError(GENERIC_LOAD_ERROR);
-          diagnoseLoadFailure(src).then((message) => {
-            if (audio.src === src) setAudioError(withLoginHint(message, !!accessTokenRef.current));
+          setAudioError(t('loadErrorChecking'));
+          diagnoseLoadFailure(src).then((explanation) => {
+            if (audio.src === src) setAudioError(withLoginHint(explanation, !!accessTokenRef.current));
           });
           return;
         }
 
-        setAudioError(err?.message || UNKNOWN_LOAD_ERROR);
+        setAudioError(err?.message || t('loadErrorUnknown'));
       }
     },
     [playlist, playbackRate, volume, isMuted, accessToken]
@@ -321,7 +318,7 @@ export function useAudioPlayer(accessToken?: string | null) {
       }
 
       const playableUrl = await getTrackPlayableUrl(track, accessToken);
-      if (!playableUrl) throw new Error('無法取得音檔的下載網址。');
+      if (!playableUrl) throw new Error(t('errNoDownloadUrl'));
 
       if (playableUrl.startsWith('blob:')) audioBlobCache.set(track.id, playableUrl);
 
@@ -332,12 +329,14 @@ export function useAudioPlayer(accessToken?: string | null) {
         const reason = playableUrl.includes('googleapis.com')
           ? await explainMediaUrlError(playableUrl)
           : null;
-        throw new Error(withLoginHint(reason ?? '網路連線失敗，無法下載音檔，請確認網路後再試。', !!accessToken));
+        throw new Error(reason ? withLoginHint(reason, !!accessToken) : t('errNetworkDownload'));
       }
 
       if (!res.ok) {
         const reason = await explainMediaUrlError(playableUrl);
-        throw new Error(withLoginHint(reason ?? `下載音檔失敗（HTTP ${res.status}）`, !!accessToken));
+        throw new Error(
+          reason ? withLoginHint(reason, !!accessToken) : t('errDownloadFailed', { status: res.status })
+        );
       }
       return await res.blob();
     },

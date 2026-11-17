@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 export interface TranscriptSegment {
   id: number;
   start: number;
@@ -28,7 +30,8 @@ const IS_IOS =
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
 const WHISPER_MODEL = IS_IOS ? 'Xenova/whisper-base' : 'Xenova/whisper-small';
-const MODEL_DOWNLOAD_HINT = IS_IOS ? '約 80–100MB' : '約 250–290MB';
+// 要在呼叫時才取得文字，這樣切換語言後才會顯示對應的語言。
+const getModelDownloadHint = () => t(IS_IOS ? 'modelSizeIos' : 'modelSizeDefault');
 
 const MIN_TRACKED_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -65,7 +68,7 @@ async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
   const arrayBuffer = await audioBlob.arrayBuffer();
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
   if (!AudioContextClass) {
-    throw new Error('您的瀏覽器不支援 AudioContext 音訊解碼');
+    throw new Error(t('errNoAudioContext'));
   }
   const targetSampleRate = 16000;
 
@@ -84,7 +87,7 @@ async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
     try {
       audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
     } catch (err: any) {
-      throw new Error(`音訊解碼失敗：${err?.message || '無法解析音訊格式'}`);
+      throw new Error(t('errDecodeFailed', { reason: err?.message || t('unknownAudioFormat') }));
     }
 
     // 已經是 16kHz：直接手動混成單聲道，不需要再建立 OfflineAudioContext 渲染一次。
@@ -119,7 +122,7 @@ async function decodeAudioTo16kHz(audioBlob: Blob): Promise<Float32Array> {
 }
 
 function abortError() {
-  return new DOMException('已取消辨識', 'AbortError');
+  return new DOMException(t('transcribeCancelled'), 'AbortError');
 }
 
 const WORKER_IDLE_MS = 60 * 1000;
@@ -176,7 +179,7 @@ function runWhisperWorker(
       return;
     }
     if (workerBusy) {
-      reject(new Error('已有另一個辨識正在進行中'));
+      reject(new Error(t('errBusy')));
       return;
     }
 
@@ -185,7 +188,7 @@ function runWhisperWorker(
       worker = acquireWorker();
     } catch (err: any) {
       console.error('Failed to create Whisper worker:', err);
-      reject(new Error(`無法建立 Whisper Worker：${err?.message || String(err)}`));
+      reject(new Error(t('errWorkerCreate', { reason: err?.message || String(err) })));
       return;
     }
     workerBusy = true;
@@ -213,7 +216,7 @@ function runWhisperWorker(
     const files = new Map<string, { loaded: number; total: number }>();
 
     worker.onmessage = (e: MessageEvent) => {
-      const { status, data, output, error } = e.data || {};
+      const { status, data, output, error, code } = e.data || {};
 
       if (status === 'model-progress') {
         const isProgress =
@@ -237,18 +240,24 @@ function runWhisperWorker(
             stage: 'downloading',
             message:
               percent >= 100
-                ? '模型下載完成，正在載入模型...'
-                : `正在下載語音辨識模型 ${percent}%`,
+                ? t('progressModelLoading')
+                : t('progressModelDownloading', { percent }),
             percent,
           });
         }
       } else if (status === 'transcribing') {
         sharedWorkerWarm = true;
-        onProgress?.({ stage: 'transcribing', message: '正在辨識音檔內容...' });
+        onProgress?.({ stage: 'transcribing', message: t('progressTranscribing') });
       } else if (status === 'complete') {
         succeed(output);
       } else if (status === 'error') {
-        fail(new Error(error || 'Whisper 辨識錯誤'));
+        const message =
+          code === 'noModel'
+            ? t('errWorkerNoModel')
+            : code === 'noAudio'
+              ? t('errWorkerNoAudio')
+              : error || t('errWhisper');
+        fail(new Error(message));
       }
     };
 
@@ -262,15 +271,15 @@ function runWhisperWorker(
       fail(
         new Error(
           e.message ||
-            `Whisper Worker 載入失敗（${
-              e.filename || '找不到 Worker 檔案，請到 DevTools 的 Network 分頁檢查'
-            }${e.lineno ? `:${e.lineno}` : ''}）`
+            t('errWorkerLoad', {
+              where: `${e.filename || t('workerFileMissing')}${e.lineno ? `:${e.lineno}` : ''}`,
+            })
         )
       );
     };
 
     worker.onmessageerror = () => {
-      fail(new Error('Worker 訊息傳遞失敗'));
+      fail(new Error(t('errWorkerMessage')));
     };
 
     try {
@@ -279,7 +288,7 @@ function runWhisperWorker(
         [audio.buffer]
       );
     } catch (err: any) {
-      fail(new Error(`無法傳送音訊給 Worker：${err?.message || String(err)}`));
+      fail(new Error(t('errWorkerSend', { reason: err?.message || String(err) })));
     }
   });
 }
@@ -494,11 +503,11 @@ export async function transcribeAudioWithWhisper(
   onProgress?: (progress: TranscribeProgress) => void,
   signal?: AbortSignal
 ): Promise<TrackTranscript> {
-  onProgress?.({ stage: 'decoding', message: '正在轉換音訊格式（16kHz 單聲道）...' });
+  onProgress?.({ stage: 'decoding', message: t('progressConverting') });
 
   const audio = await decodeAudioTo16kHz(audioBlob);
   if (audio.length === 0) {
-    throw new Error('音檔解碼後是空的，無法辨識。');
+    throw new Error(t('errEmptyDecoded'));
   }
   const audioSeconds = audio.length / 16000;
   const silences = findSilences(audio);
@@ -508,7 +517,7 @@ export async function transcribeAudioWithWhisper(
   if (!sharedWorkerWarm) {
     onProgress?.({
       stage: 'downloading',
-      message: `正在準備語音辨識模型（${MODEL_DOWNLOAD_HINT}，首次使用需下載，之後會保存在瀏覽器中）...`,
+      message: t('progressPreparingModel', { size: getModelDownloadHint() }),
       percent: 0,
     });
   }
@@ -532,6 +541,6 @@ export async function transcribeAudioWithWhisper(
   };
 
   saveCachedTranscript(result);
-  onProgress?.({ stage: 'completed', message: '轉錄完成！', percent: 100 });
+  onProgress?.({ stage: 'completed', message: t('progressDone'), percent: 100 });
   return result;
 }

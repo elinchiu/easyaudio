@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AudioTrack } from '../types/track';
 import { TrackTranscript } from '../lib/whisper';
 import type { TranscriptionQueue } from '../hooks/useTranscriptionQueue';
+import { useT } from '../lib/i18n';
 import {
   FileText,
   X,
@@ -53,6 +54,7 @@ export const TranscriptModal: React.FC<Props> = ({
   onWidthChange,
   onResizingChange,
 }) => {
+  const t = useT();
   const trackId = currentTrack?.id ?? null;
 
   const [transcript, setTranscript] = useState<TrackTranscript | null>(null);
@@ -159,18 +161,18 @@ export const TranscriptModal: React.FC<Props> = ({
 
   return (
     <aside
-      aria-label="音檔文字"
+      aria-label={t('transcript')}
       className="fixed top-0 right-0 bottom-24 z-30 w-full lg:w-[var(--transcript-w)] bg-white border-l border-slate-200 shadow-xl flex flex-col text-slate-800"
     >
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="調整文字面板寬度"
+        aria-label={t('resizePanelAria')}
         aria-valuenow={width}
         aria-valuemin={TRANSCRIPT_PANEL_MIN_WIDTH}
         aria-valuemax={TRANSCRIPT_PANEL_MAX_WIDTH}
         tabIndex={0}
-        title="拖曳調整寬度（雙擊恢復預設）"
+        title={t('resizePanelTitle')}
         onPointerDown={handleResizePointerDown}
         onPointerMove={handleResizePointerMove}
         onPointerUp={endResize}
@@ -197,7 +199,7 @@ export const TranscriptModal: React.FC<Props> = ({
         <button
           onClick={onClose}
           className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition shrink-0"
-          title="關閉（Esc）"
+          title={t('closeTitle')}
         >
           <X className="w-5 h-5" />
         </button>
@@ -208,7 +210,7 @@ export const TranscriptModal: React.FC<Props> = ({
           <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3.5 rounded-2xl flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <div className="font-semibold">辨識提示</div>
+              <div className="font-semibold">{t('transcribeNoticeTitle')}</div>
               <div className="mt-0.5">{error}</div>
             </div>
           </div>
@@ -221,11 +223,9 @@ export const TranscriptModal: React.FC<Props> = ({
             </div>
             <div className="space-y-1.5 max-w-sm">
               <h4 className="text-base font-bold text-slate-900">
-                {progress?.message || '正在辨識音檔...'}
+                {progress?.message || t('transcribingDefault')}
               </h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                辨識在瀏覽器裡進行，音檔不會上傳到任何 AI 伺服器。辨識時間會隨音檔長度增加，請保持網頁開啟。
-              </p>
+              <p className="text-xs text-slate-500 leading-relaxed">{t('transcribeLocalNote')}</p>
             </div>
 
             {progress?.percent !== undefined && (
@@ -247,7 +247,7 @@ export const TranscriptModal: React.FC<Props> = ({
               onClick={handleCancelTranscribe}
               className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition"
             >
-              取消辨識
+              {t('cancelTranscribe')}
             </button>
           </div>
         )}
@@ -259,12 +259,10 @@ export const TranscriptModal: React.FC<Props> = ({
             </div>
             <div className="space-y-1.5 max-w-md">
               <h4 className="text-base font-bold text-slate-900">
-                {isQueued ? '準備辨識中' : '目前音檔尚未轉錄文字'}
+                {isQueued ? t('preparingTitle') : t('notTranscribedTitle')}
               </h4>
               <p className="text-xs text-slate-500 leading-relaxed">
-                {isQueued
-                  ? '即將開始辨識這一首。'
-                  : '點擊下方按鈕辨識此音檔的內容。辨識完成後，點擊任一句就能跳到該處播放。'}
+                {isQueued ? t('queuedNote') : t('idleNote')}
               </p>
             </div>
 
@@ -275,7 +273,7 @@ export const TranscriptModal: React.FC<Props> = ({
                   onClick={handleCancelTranscribe}
                   className="w-full px-5 py-3 rounded-2xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 active:scale-95 transition"
                 >
-                  取消
+                  {t('cancel')}
                 </button>
               ) : (
                 <button
@@ -283,14 +281,12 @@ export const TranscriptModal: React.FC<Props> = ({
                   className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-semibold bg-[#36415A] hover:bg-[#2b3447] text-white shadow-md active:scale-95 transition"
                 >
                   <Sparkles className="w-4 h-4 text-[#E0F8C7]" />
-                  <span>{error ? '重新辨識' : '開始辨識'}</span>
+                  <span>{error ? t('retranscribe') : t('startTranscribe')}</span>
                 </button>
               )}
             </div>
 
-            <div className="pt-3 text-[11px] text-slate-400">
-              • 辨識結果可能有錯字。首次使用需要下載語音辨識模型，建議在 Wi-Fi 下進行。
-            </div>
+            <div className="pt-3 text-[11px] text-slate-400">{t('transcribeDisclaimer')}</div>
           </div>
         )}
 
@@ -300,7 +296,7 @@ export const TranscriptModal: React.FC<Props> = ({
               <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <input
                 type="text"
-                placeholder="搜尋文字..."
+                placeholder={t('searchTextPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-400"
@@ -314,7 +310,7 @@ export const TranscriptModal: React.FC<Props> = ({
 
             <div className="space-y-2">
               {filteredSegments.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-400">找不到符合搜尋的文字</div>
+                <div className="py-8 text-center text-xs text-slate-400">{t('noTextMatch')}</div>
               ) : (
                 filteredSegments.map((segment) => {
                   const isActive = segment.id === activeId;
@@ -340,7 +336,7 @@ export const TranscriptModal: React.FC<Props> = ({
                             ? 'bg-[#36415A] text-[#E0F8C7]'
                             : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                         }`}
-                        title="跳轉至此時間點播放"
+                        title={t('jumpToTime')}
                       >
                         <Play className="w-2.5 h-2.5 fill-current" />
                         <span>{formatTime(segment.start)}</span>
@@ -358,7 +354,7 @@ export const TranscriptModal: React.FC<Props> = ({
 
       {transcript && !isTranscribing && (
         <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500">
-          <span>點擊任意句子即可直接跳轉</span>
+          <span>{t('clickToJump')}</span>
         </div>
       )}
     </aside>

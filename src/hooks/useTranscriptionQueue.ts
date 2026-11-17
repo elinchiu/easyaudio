@@ -7,6 +7,7 @@ import {
   hasCachedTranscript,
   transcribeAudioWithWhisper,
 } from '../lib/whisper';
+import { t } from '../lib/i18n';
 
 export type TrackJobStatus = 'idle' | 'queued' | 'running' | 'error';
 
@@ -62,7 +63,7 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
         currentIdRef.current = track.id;
         lastProgressKeyRef.current = '';
         setRunningId(track.id);
-        setProgress({ stage: 'decoding', message: '正在讀取音訊檔...' });
+        setProgress({ stage: 'decoding', message: t('progressReadingAudio') });
 
         const reportProgress = (p: TranscribeProgress) => {
           const key = `${p.stage}|${p.message}|${p.percent ?? ''}`;
@@ -73,8 +74,8 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
 
         try {
           const blob = await getBlobRef.current(track);
-          if (controller.signal.aborted) throw new DOMException('已取消辨識', 'AbortError');
-          if (!blob) throw new Error('無法取得音檔內容，請稍後再試。');
+          if (controller.signal.aborted) throw new DOMException(t('transcribeCancelled'), 'AbortError');
+          if (!blob) throw new Error(t('errNoAudioContent'));
 
           const result = await transcribeAudioWithWhisper(
             blob,
@@ -92,7 +93,7 @@ export function useTranscriptionQueue({ getTrackAudioBlob }: Params) {
             console.error('Whisper transcription failed:', track.name, err);
             setErrors((prev) => ({
               ...prev,
-              [track.id]: err?.message || '辨識失敗，請稍後再試。',
+              [track.id]: err?.message || t('errTranscribeFailed'),
             }));
           }
         } finally {

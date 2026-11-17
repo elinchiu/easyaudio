@@ -3,6 +3,16 @@ import { pipeline, env } from '@xenova/transformers';
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// Worker 讀不到 localStorage，無法自己判斷語言，
+// 所以只回傳錯誤代碼（code），由主執行緒轉成使用者目前語言的訊息。
+class WorkerError extends Error {
+  code: 'noModel' | 'noAudio';
+  constructor(code: 'noModel' | 'noAudio', message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
 let loadedModel: string | null = null;
 let transcriberPromise: Promise<any> | null = null;
 
@@ -29,9 +39,9 @@ async function handleTranscribe(data: any) {
   const { audioData, language, model } = data || {};
 
   try {
-    if (!model) throw new Error('沒有指定 Whisper 模型');
+    if (!model) throw new WorkerError('noModel', 'No Whisper model specified');
     if (!(audioData instanceof Float32Array) || audioData.length === 0) {
-      throw new Error('沒有收到音訊資料');
+      throw new WorkerError('noAudio', 'No audio data received');
     }
 
     const transcriber = await getTranscriber(model);
@@ -49,7 +59,11 @@ async function handleTranscribe(data: any) {
     self.postMessage({ status: 'complete', output });
   } catch (err: any) {
     console.error('[Whisper Worker Error]', err);
-    self.postMessage({ status: 'error', error: err?.message || String(err) });
+    self.postMessage({
+      status: 'error',
+      code: err instanceof WorkerError ? err.code : undefined,
+      error: err?.message || String(err),
+    });
   }
 }
 

@@ -7,6 +7,7 @@ import {
   User,
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { t } from './i18n';
 
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -67,7 +68,7 @@ export const initAuth = (onAuthSuccess: (user: User, token: string) => void) =>
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string }> => {
   const result = await signInWithPopup(auth, provider);
   const token = GoogleAuthProvider.credentialFromResult(result)?.accessToken;
-  if (!token) throw new Error('無法取得 Google 雲端授權存取 Token');
+  if (!token) throw new Error(t('errNoToken'));
 
   storeToken(token);
   return { user: result.user, accessToken: token };

@@ -4,6 +4,8 @@ import { useAudioPlayer } from './hooks/useAudioPlayer';
 import { useTranscriptionQueue } from './hooks/useTranscriptionQueue';
 import { fetchFolderAudioTracks, extractFolderId } from './lib/driveApi';
 import { googleSignIn, initAuth, getAccessTokenExpiresAt } from './lib/firebase';
+import { useT } from './lib/i18n';
+import { LanguageSwitch } from './components/LanguageSwitch';
 
 import { TrackListView } from './components/TrackListView';
 import { AudioPlayerBar } from './components/AudioPlayerBar';
@@ -46,6 +48,7 @@ function readSavedFolder(): SavedFolder | null {
 const AUTO_TRANSCRIBE_ON_PLAY = true;
 
 export default function App() {
+  const t = useT();
   const [initialSaved] = useState<SavedFolder | null>(readSavedFolder);
   const [folderUrl, setFolderUrl] = useState<string>(initialSaved?.url ?? '');
   const [folderName, setFolderName] = useState<string>(initialSaved?.name ?? 'File Name');
@@ -195,7 +198,7 @@ export default function App() {
         } catch (e: any) {
           console.warn('Sign-in cancelled or failed:', e);
           setIsLoadingFolder(false);
-          setFolderError('登入授權已取消，無法讀取私人資料夾。');
+          setFolderError(t('errSignInCancelled'));
           return false;
         }
       }
@@ -217,7 +220,7 @@ export default function App() {
       } catch (err: any) {
         console.error('Failed to load entire folder:', err);
         if (!silent) {
-          setFolderError(err?.message || '讀取資料夾失敗，請稍後再試。');
+          setFolderError(err?.message || t('errFolderLoad'));
           setIsPrivateFolder(err?.name === 'AuthRequiredError');
         }
         return false;
@@ -315,29 +318,28 @@ export default function App() {
             />
             <div className="min-w-0">
               <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight whitespace-nowrap truncate">
-                Easy Audio - 播放音檔不卡卡
+                {t('appTitle')}
               </h1>
-              <p className="text-[11px] text-slate-500 hidden sm:block">
-                空白鍵暫停/播放 · 左右鍵 ±3秒 · Shift + N 下一首 · Shift + P 上一首 · S鍵 開啟/關閉文檔視窗
-              </p>
+              <p className="text-[11px] text-slate-500 hidden sm:block">{t('shortcutsHint')}</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <LanguageSwitch />
             {accessToken ? (
               <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>已登入 Google</span>
+                <span>{t('signedIn')}</span>
               </span>
             ) : (
               <button
                 onClick={() => handleAuthorize()}
                 disabled={isAuthorizing}
                 className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 transition border border-slate-200"
-                title="只有私人資料夾才需要登入 Google；公開資料夾不用登入"
+                title={t('signInTooltip')}
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
-                <span>{isAuthorizing ? '登入中...' : '登入 Google'}</span>
+                <span>{isAuthorizing ? t('signingIn') : t('signIn')}</span>
               </button>
             )}
           </div>
@@ -356,8 +358,8 @@ export default function App() {
               inputMode="url"
               value={folderInput}
               onChange={(e) => setFolderInput(e.target.value)}
-              placeholder="貼上資料夾連結"
-              aria-label="Google Drive 資料夾連結"
+              placeholder={t('folderPlaceholder')}
+              aria-label={t('folderAria')}
               className="w-full min-w-0 bg-transparent outline-none text-sm text-[#36415A] placeholder:text-slate-500"
             />
           </div>
@@ -369,12 +371,10 @@ export default function App() {
             {isLoadingFolder && (
               <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             )}
-            <span>{isLoadingFolder ? '匯入中...' : '匯入'}</span>
+            <span>{isLoadingFolder ? t('importing') : t('importBtn')}</span>
           </button>
 
-          <p className="basis-full px-1 text-xs text-slate-500 leading-relaxed">
-            請確認 Google Drive 資料夾已設為「知道連結的任何人」可檢視，再貼上連結並按「匯入」。若是非公開資料夾，可登入 Google 後讀取。
-          </p>
+          <p className="basis-full px-1 text-xs text-slate-500 leading-relaxed">{t('importHelp')}</p>
         </form>
 
         {folderError && (
@@ -384,20 +384,16 @@ export default function App() {
               <div className="flex-1 font-medium leading-relaxed">{folderError}</div>
             </div>
             {!isPrivateFolder && (
-              <div className="text-amber-800/80 pl-6">
-                請確認資料夾（含子資料夾與檔案）的分享設定為「知道連結的任何人 → 檢視者」。
-              </div>
+              <div className="text-amber-800/80 pl-6">{t('shareHint')}</div>
             )}
             {!accessToken && (
               <div className="pt-1 flex items-center justify-between gap-3">
-                <span className="text-amber-800/80">
-                  若是私人資料夾，請登入 Google 後方可讀取。
-                </span>
+                <span className="text-amber-800/80">{t('privateHint')}</span>
                 <button
                   onClick={handleLoginAndLoad}
                   className="shrink-0 flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold px-4 py-2 rounded-xl shadow-sm active:scale-95 transition text-xs"
                 >
-                  <span>登入 Google 讀取</span>
+                  <span>{t('signInToLoad')}</span>
                 </button>
               </div>
             )}
@@ -413,7 +409,7 @@ export default function App() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-slate-800 text-sm truncate">{folderName}</span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold border border-indigo-100">
-                  {tracks.length} 首音檔
+                  {t('tracksBadge', { n: tracks.length })}
                 </span>
               </div>
             </div>
@@ -426,7 +422,7 @@ export default function App() {
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 active:scale-95 transition disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingFolder ? 'animate-spin' : ''}`} />
-              <span>{isLoadingFolder ? '讀取中...' : '重新整理'}</span>
+              <span>{isLoadingFolder ? t('loading') : t('refresh')}</span>
             </button>
           </div>
         </div>
@@ -446,7 +442,7 @@ export default function App() {
         className={`w-full max-w-5xl mx-auto px-4 ${player.currentTrack ? 'pb-32' : 'pb-6'}`}
       >
         <nav
-          aria-label="法律資訊"
+          aria-label={t('legalNavAria')}
           className="flex items-center justify-center gap-3 border-t border-slate-200 pt-4 text-xs text-slate-500"
         >
           <a
@@ -455,7 +451,7 @@ export default function App() {
             rel="noopener noreferrer"
             className="hover:text-[#36415A] hover:underline underline-offset-2 transition"
           >
-            Terms
+            {t('termsLink')}
           </a>
           <span aria-hidden="true">·</span>
           <a
@@ -464,7 +460,7 @@ export default function App() {
             rel="noopener noreferrer"
             className="hover:text-[#36415A] hover:underline underline-offset-2 transition"
           >
-            Privacy Policy
+            {t('privacyLink')}
           </a>
         </nav>
       </footer>
